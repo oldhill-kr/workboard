@@ -65,6 +65,10 @@ header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; back
 .btn.icon { padding: 7px 9px; }
 a.btn { color: var(--text); text-decoration: none; }
 .btn.danger { color: var(--red); }
+.store-opt { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.store-opt > div { flex: 1; min-width: 0; }
+.store-opt .sm, #storageNow { color: var(--sub); font-size: 12.5px; margin-top: 2px; }
+.store-opt .btn { flex: none; }
 .archbtn { border: 1px dashed var(--line); background: transparent; border-radius: 999px; padding: 4px 11px; font-size: 12.5px; color: var(--sub); }
 .archbtn:hover { background: var(--panel-2); color: var(--text); }
 .arch-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -301,6 +305,30 @@ textarea { width: 100%; resize: vertical; }
   </div>
 </div>
 
+<div class="modal" id="storageModal">
+  <div class="modal-box" style="width:min(640px,100%)">
+    <h2>데이터를 어디에 저장할까요?</h2>
+    <div style="color:var(--sub);font-size:12.5px;margin:-6px 0 12px">업무 내용은 선택한 곳에만 저장돼요. 이 사이트의 서버로는 전송되지 않아요.</div>
+    <div class="store-opt">
+      <div><b>A. 이 브라우저 (로컬)</b><div class="sm">가장 간단해요. 이 PC의 이 브라우저에만 저장돼요. 다른 PC에서는 보이지 않아요. (백업 파일로 옮길 수 있어요)</div></div>
+      <button class="btn" data-store="local">A로 시작</button>
+    </div>
+    <div class="store-opt">
+      <div><b>B. 구글 드라이브</b><div class="sm">구글 로그인만 하면 어느 PC에서나 같은 데이터를 써요. 내 드라이브의 “업무보드 데이터” 폴더에 저장돼요.</div>
+        <input type="text" id="gClientId" placeholder="Google OAuth 클라이언트 ID (배포자가 알려줘요)" style="width:100%;margin-top:6px"></div>
+      <button class="btn" data-store="drive">B로 연결</button>
+    </div>
+    <div class="store-opt">
+      <div><b>C. 옵시디언 / 내 PC 폴더</b><div class="sm">옵시디언 볼트의 <code>Work</code> 폴더를 고르면 지금 쓰는 노트(.md)를 그대로 읽고 써요. Chrome·Edge에서만 가능해요.</div>
+        <input type="text" id="vaultName" placeholder="옵시디언 볼트 이름 (선택 · ‘Obsidian에서 열기’ 링크용)" style="width:100%;margin-top:6px"></div>
+      <button class="btn" data-store="folder">C로 폴더 고르기</button>
+    </div>
+    <div id="storageMsg" class="sm" style="margin-top:8px;color:var(--red)"></div>
+    <div class="actions"><button type="button" class="btn" id="storageBackup" style="margin-right:auto">백업 내려받기</button><button type="button" class="btn" id="storageRestore">백업 불러오기</button><button type="button" class="btn" data-close id="storageClose">닫기</button></div>
+    <input type="file" id="restoreFile" accept="application/json" hidden>
+  </div>
+</div>
+
 <div class="modal" id="settingsModal">
   <form class="modal-box" id="settingsForm">
     <h2>설정</h2>
@@ -310,6 +338,9 @@ textarea { width: 100%; resize: vertical; }
         <span>🌆 퇴근 전 체크</span><input type="time" name="evening"><button type="button" class="quick" data-test="evening">테스트</button>
         <span>🔁 금요일 정기</span><input type="time" name="friday"><button type="button" class="quick" data-test="friday">테스트</button>
       </div></div>
+    <div class="field" id="storageField" style="display:none"><label>저장 위치</label>
+      <div class="row"><span id="storageNow" class="sm"></span><button type="button" class="quick" id="storageChange">저장 위치 바꾸기</button></div></div>
+    <div id="icsBlock">
     <div class="field"><label>구글 캘린더 연결</label></div>
     <div class="help">구글 캘린더의 <b>비공개 주소(iCal 형식)</b>를 붙여 넣으면 일정이 달력에 같이 나와요.
       <ol><li>PC에서 calendar.google.com 열기 → 오른쪽 위 ⚙ → <b>설정</b></li>
@@ -317,6 +348,7 @@ textarea { width: 100%; resize: vertical; }
       <li><b>캘린더 통합</b> → <b>iCal 형식의 비공개 주소</b> 복사</li></ol>
       주소는 이 PC의 <code>config.json</code>에만 저장돼요. 캘린더가 여러 개면 한 줄에 하나씩 넣으세요.</div>
     <div class="field"><textarea name="urls" rows="3" placeholder="이미 연결된 캘린더는 비워 두면 그대로 유지돼요"></textarea></div>
+    </div>
     <div class="actions"><button type="button" class="btn" data-close>취소</button><button class="btn primary">저장</button></div>
   </form>
 </div>
@@ -372,7 +404,9 @@ function ddayLabel(t) {
 function visible(t) { return projectFilter.size === 0 || projectFilter.has(t.project); }
 function toast(msg) { const el = $("#toast"); el.textContent = msg; el.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 1800); }
 
+let STATIC_MODE = false;  // true: 서버 없이 브라우저에서만 동작 (GitHub Pages 등)
 async function api(path, body) {
+  if (STATIC_MODE) return WBCore.handle(path, body);
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || "오류");
@@ -582,7 +616,7 @@ function renderDrawer(t) {
       <div class="field"><label>진행 기록 남기기</label><div class="logrow"><input type="text" id="logInput" placeholder="예: 현장 테스트 OK, 김영준 대리 회신 대기"><button class="btn" id="logBtn">추가</button></div></div>
       <div class="note">${renderBody(t.body)}</div>
     </div>
-    <div class="d-foot"><a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a><button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
+    <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
 }
 let editingCheck = null;
 /* 다시 그려도 입력 중인 글·커서·스크롤이 유지되도록 */
@@ -790,6 +824,9 @@ $("#newForm").onsubmit = async e => {
 $("#settingsBtn").onclick = async () => {
   const f = $("#settingsForm"); f.urls.value = "";
   try { const j = await api("/api/config"); for (const k of ["morning", "evening", "friday"]) f[k].value = j.alarms?.[k] || ""; } catch (e) {}
+  $("#icsBlock").style.display = STATIC_MODE ? "none" : "";
+  $("#storageField").style.display = STATIC_MODE ? "" : "none";
+  if (STATIC_MODE) try { $("#storageNow").textContent = (await api("/api/config")).work_dir; } catch (e) {}
   $("#settingsModal").classList.add("on");
 };
 $("#settingsModal").addEventListener("click", async e => {
@@ -815,14 +852,105 @@ async function refreshEventsForSide() {
   try { const j = await api(`/api/events?start=${today}&end=${addDays(today, 1)}`); events = j.events; renderSide(); renderNotice(j.errors); } catch (e) {}
 }
 
-(async () => {
-  try { await loadConfig(); await loadTasks(); } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ 서버에 연결할 수 없어요. 업무보드 실행.bat을 다시 실행해 주세요. (${esc(e.message)})</div>`; return; }
+/* ---- 웹(정적) 모드: 저장소 선택 ---- */
+const loadScript = src => new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src + " 불러오기 실패")); document.head.appendChild(s); });
+async function detectStatic() {
+  try { const r = await fetch("/api/config"); if (r.ok) { await r.json(); return false; } } catch (e) {}
+  return true;
+}
+async function useBackend(kind, opts = {}) {
+  const AD = window.WBAdapters;
+  let adapter;
+  if (kind === "local") adapter = AD.localAdapter();
+  else if (kind === "drive") {
+    const id = opts.clientId || localStorage.getItem("wb.gclient") || (window.WB_CONFIG || {}).googleClientId;
+    if (!id) throw new Error("구글 OAuth 클라이언트 ID가 필요해요");
+    adapter = await AD.driveAdapter(id);
+    try { localStorage.setItem("wb.gclient", id); } catch (e) {}
+  } else if (kind === "folder") {
+    let h = opts.handle;
+    if (!h) h = await AD.pickFolder();
+    if (!(await AD.ensurePermission(h))) throw new Error("폴더 접근을 허용해 주세요");
+    adapter = AD.folderAdapter(h);
+    if (opts.vault != null) WBCore.setVault(opts.vault);
+  } else throw new Error("알 수 없는 저장 위치");
+  WBCore.init(adapter);
+  try { localStorage.setItem("wb.backend", kind); } catch (e) {}
+  await loadConfig(); await loadTasks();
+}
+function openStorageModal(msg) {
+  $("#storageMsg").textContent = msg || "";
+  $("#gClientId").value = localStorage.getItem("wb.gclient") || (window.WB_CONFIG || {}).googleClientId || "";
+  $("#vaultName").value = WBCore.vault || "";
+  $("#storageClose").style.display = window.__booted ? "" : "none";
+  $("#storageModal").classList.add("on");
+}
+async function chooseStorage(kind) {
+  const m = $("#storageMsg"); m.textContent = "";
+  try {
+    await useBackend(kind, { clientId: $("#gClientId").value.trim(), vault: $("#vaultName").value.trim() });
+    $("#storageModal").classList.remove("on");
+    if (!window.__booted) { window.__booted = true; afterBoot(); }
+    toast("저장 위치를 연결했어요");
+  } catch (e) { if (e.name !== "AbortError") m.textContent = e.message; }
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-store]");
+  if (b) return chooseStorage(b.dataset.store);
+  if (e.target.id === "storageChange") { $("#settingsModal").classList.remove("on"); openStorageModal(); }
+});
+$("#storageBackup").onclick = async () => {
+  try {
+    const a = WBAdapters.localAdapter();
+    const data = JSON.stringify(await a.exportAll());
+    const l = document.createElement("a");
+    l.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+    l.download = `업무보드-백업-${isoDate(new Date())}.json`; l.click();
+  } catch (e) { $("#storageMsg").textContent = e.message; }
+};
+$("#storageRestore").onclick = () => $("#restoreFile").click();
+$("#restoreFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const files = JSON.parse(await f.text());
+    if (!Array.isArray(files) || !files.every(x => x.path && typeof x.text === "string")) throw new Error("백업 파일 형식이 아니에요");
+    await WBAdapters.localAdapter().importAll(files);
+    $("#storageMsg").style.color = "var(--green)"; $("#storageMsg").textContent = `${files.length}개 파일을 불러왔어요. 'A로 시작'을 눌러 확인하세요.`;
+  } catch (err) { $("#storageMsg").style.color = "var(--red)"; $("#storageMsg").textContent = err.message; }
+  e.target.value = "";
+};
+
+function afterBoot() {
   setView(view);
   if (view !== "calendar") refreshEventsForSide();
   // 입력 중일 때는 자동 새로고침을 미룬다 (쓰던 글이 사라지지 않게)
   const typing = () => { const a = document.activeElement; return a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== "checkbox" && a.value; };
   setInterval(() => { if (!document.hidden && !$(".modal.on") && !typing()) loadTasks().catch(() => {}); }, 60000);
   window.addEventListener("focus", () => { if (!typing()) loadTasks().catch(() => {}); });
+}
+
+(async () => {
+  STATIC_MODE = await detectStatic();
+  if (STATIC_MODE) {
+    try {
+      for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(f);
+    } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
+    await loadHolidays();
+    // 지난번에 쓰던 저장 위치로 자동 연결 (폴더는 권한 확인 때문에 클릭이 필요할 수 있음)
+    const last = (() => { try { return localStorage.getItem("wb.backend"); } catch (e) { return null; } })();
+    try {
+      if (last === "local") await useBackend("local");
+      else if (last === "folder") {
+        const h = await WBAdapters.savedFolder();
+        if (h && (await h.queryPermission({ mode: "readwrite" })) === "granted") await useBackend("folder", { handle: h });
+        else { openStorageModal(h ? "지난번에 쓰던 폴더를 다시 연결하려면 ‘C로 폴더 고르기’를 눌러 주세요." : ""); return; }
+      } else { openStorageModal(); return; }
+    } catch (e) { openStorageModal(e.message); return; }
+    window.__booted = true; afterBoot();
+    return;
+  }
+  try { await loadConfig(); await loadTasks(); } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ 서버에 연결할 수 없어요. 업무보드 실행.bat을 다시 실행해 주세요. (${esc(e.message)})</div>`; return; }
+  afterBoot();
 })();
 </script>
 </body>
