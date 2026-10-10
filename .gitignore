@@ -1,0 +1,7 @@
+# PC마다 다른 값(경로, 개인 캘린더 주소, 알림 상태)과 자동 생성 파일은 올리지 않는다
+config.json
+alarm_state.json
+holidays_cache.ics
+__pycache__/
+*.pyc
+*.log
