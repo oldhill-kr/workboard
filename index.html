@@ -329,6 +329,16 @@ textarea { width: 100%; resize: vertical; }
   </div>
 </div>
 
+<div class="modal" id="confirmModal">
+  <div class="modal-box" style="width:min(460px,100%)">
+    <h2>저장 위치 확인</h2>
+    <div style="color:var(--sub);font-size:12.5px;margin:-6px 0 12px">업무 내용을 아래 위치에 저장합니다.</div>
+    <div id="confirmWhere" style="padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);font-weight:600"></div>
+    <div id="confirmMsg" class="sm" style="margin-top:8px;color:var(--red)"></div>
+    <div class="actions"><button type="button" class="btn" id="confirmChange" style="margin-right:auto">저장 위치 바꾸기</button><button type="button" class="btn primary" id="confirmOk">확인</button></div>
+  </div>
+</div>
+
 <div class="modal" id="settingsModal">
   <form class="modal-box" id="settingsForm">
     <h2>설정</h2>
@@ -992,17 +1002,33 @@ function afterBoot() {
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(f);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();
-    // 지난번에 쓰던 저장 위치로 자동 연결 (폴더는 권한 확인 때문에 클릭이 필요할 수 있음)
+    // 지난번에 쓰던 저장 위치를 보여 주고, 확인 버튼을 누르면 업무보드를 연다
+    // (폴더 권한·구글 로그인은 클릭 직후에만 요청할 수 있어서 확인 버튼이 그 역할도 한다)
     const last = (() => { try { return localStorage.getItem("wb.backend"); } catch (e) { return null; } })();
+    let folder = null, where = "";
     try {
-      if (last === "local") await useBackend("local");
+      if (last === "local") where = "💾 이 브라우저 (로컬)";
+      else if (last === "drive" && gClientId()) where = "☁ 구글 드라이브 — “업무보드 데이터” 폴더";
       else if (last === "folder") {
-        const h = await WBAdapters.savedFolder();
-        if (h && (await h.queryPermission({ mode: "readwrite" })) === "granted") await useBackend("folder", { handle: h });
-        else { openStorageModal(h ? "지난번에 쓰던 폴더를 다시 연결하려면 ‘C로 폴더 고르기’를 눌러 주세요." : ""); return; }
-      } else { openStorageModal(); return; }
-    } catch (e) { openStorageModal(e.message); return; }
-    window.__booted = true; afterBoot();
+        folder = await WBAdapters.savedFolder();
+        if (folder) where = "📁 옵시디언 / 내 PC 폴더 — " + folder.name;
+      }
+    } catch (e) {}
+    if (!where) { openStorageModal(); return; }
+    await new Promise(done => {
+      $("#confirmWhere").textContent = where;
+      $("#confirmModal").classList.add("on");
+      $("#confirmChange").onclick = () => { $("#confirmModal").classList.remove("on"); openStorageModal(); done(false); };
+      $("#confirmOk").onclick = async () => {
+        $("#confirmMsg").textContent = "";
+        try {
+          await useBackend(last, folder ? { handle: folder } : {});
+          $("#confirmModal").classList.remove("on");
+          window.__booted = true; afterBoot();
+          done(true);
+        } catch (e) { if (e.name !== "AbortError") $("#confirmMsg").textContent = e.message; }
+      };
+    });
     return;
   }
   try { await loadConfig(); await loadTasks(); } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ 서버에 연결할 수 없어요. 업무보드 실행.bat을 다시 실행해 주세요. (${esc(e.message)})</div>`; return; }
