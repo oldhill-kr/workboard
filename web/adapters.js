@@ -211,6 +211,64 @@
     };
   }
 
-  root.WBAdapters = { localAdapter, folderAdapter, driveAdapter, pickFolder, savedFolder, ensurePermission, meta };
+  // ---------- 구글 캘린더 (읽기 전용) ----------
+  const SCOPE_CAL = "https://www.googleapis.com/auth/calendar.readonly";
+  function calendarProvider(clientId) {
+    let token = null, expires = 0;
+    function requestToken(prompt) {
+      return new Promise((res, rej) => {
+        const c = google.accounts.oauth2.initTokenClient({
+          client_id: clientId, scope: SCOPE_CAL,
+          callback: r => { if (r.error) return rej(new Error("구글 로그인에 실패했어요: " + r.error)); token = r.access_token; expires = Date.now() + (r.expires_in - 60) * 1000; res(); },
+          error_callback: e => rej(new Error("구글 로그인 창이 닫혔거나 열 수 없어요 (" + (e.type || "취소") + ")")),
+        });
+        c.requestAccessToken({ prompt });
+      });
+    }
+    async function ensure(prompt) {
+      await loadScript(GIS);
+      if (token && Date.now() < expires) return;
+      await requestToken(prompt);
+    }
+    async function get(url) {
+      const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+      if (r.status === 401) { token = null; throw new Error("구글 캘린더 연결이 만료됐어요. 설정에서 다시 연결해 주세요"); }
+      if (!r.ok) throw new Error(`구글 캘린더 오류 (${r.status})`);
+      return r.json();
+    }
+    const pad = n => String(n).padStart(2, "0");
+    const localIso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return {
+      connect() { return ensure("consent"); },   // 사용자가 버튼을 눌렀을 때
+      silent() { return ensure(""); },           // 이전에 허용한 경우 조용히 다시 연결
+      async fetch(start, end) {
+        await ensure("");
+        const timeMin = new Date(start + "T00:00:00").toISOString(), timeMax = new Date(end + "T00:00:00").toISOString();
+        const cals = (await get("https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader")).items || [];
+        const events = [], errors = [];
+        for (const cal of cals) {
+          if (cal.selected === false || /holiday@group\.v\.calendar\.google\.com$/.test(cal.id)) continue;  // 공휴일은 따로 표시
+          try {
+            const q = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "250" });
+            const j = await get(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?${q}`);
+            for (const e of j.items || []) {
+              if (e.status === "cancelled") continue;
+              const allDay = !!(e.start && e.start.date);
+              events.push({
+                title: e.summary || "(제목 없음)",
+                start: allDay ? e.start.date : localIso(new Date(e.start.dateTime)),
+                end: allDay ? e.end.date : localIso(new Date(e.end.dateTime)),
+                allDay, location: e.location || "", description: (e.description || "").slice(0, 500),
+                calendar: cal.summaryOverride || cal.summary || "", calIndex: 0,
+              });
+            }
+          } catch (err) { errors.push(`${cal.summary || cal.id}: ${err.message}`); }
+        }
+        return { events, errors };
+      },
+    };
+  }
+
+  root.WBAdapters = { localAdapter, folderAdapter, driveAdapter, calendarProvider, pickFolder, savedFolder, ensurePermission, meta };
   if (typeof module !== "undefined" && module.exports) module.exports = root.WBAdapters;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -21,7 +21,7 @@ import recurring_ical_events
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
 DEFAULT_CONFIG = {
-    "work_dir": r"C:\Users\muyul\OneDrive\문서\Obsidian Vault\Work",
+    "work_dir": str(Path.home() / "OneDrive" / "문서" / "Obsidian Vault" / "Work"),
     "vault_name": "Obsidian Vault",
     "ics_urls": [],
     "port": 8765,

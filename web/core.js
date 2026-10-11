@@ -14,6 +14,7 @@
   const TASK_DIR = "업무", TRASH_DIR = "_휴지통", COLORS_FILE = ".업무보드-색상.json";
 
   let A = null;                 // 저장소 어댑터
+  let CAL = null;               // 구글 캘린더 제공자 (없으면 일정 없음)
   const cache = new Map();      // 경로 → {text, mtime}
   let chain = Promise.resolve(); // 요청을 한 줄로 세워 동시 수정 방지
   let settings = { vault: "", alarms: { morning: "08:40", evening: "17:00", friday: "16:00" } };
@@ -456,9 +457,13 @@ ${checkLines}
     const u = new URL(path, "http://x"), p = u.pathname, q = u.searchParams;
     if (!body) {
       if (p === "/api/tasks") return { tasks: await listTasks(), archived: await archivedSummary(), colors: await projectColors(), today: todayISO() };
-      if (p === "/api/events") return { events: [], errors: [] };
+      if (p === "/api/events") {
+        if (!CAL) return { events: [], errors: [] };
+        try { return await CAL.fetch(q.get("start") || todayISO(), q.get("end") || addDaysISO(todayISO(), 42)); }
+        catch (e) { return { events: [], errors: [e.message] }; }
+      }
       if (p === "/api/holidays") return listHolidays(q.get("start") || "0000-01-01", q.get("end") || "9999-12-31");
-      if (p === "/api/config") return { ics_count: 0, work_dir: A ? A.label : "", alarms: settings.alarms, static: true };
+      if (p === "/api/config") return { ics_count: CAL ? 1 : 0, work_dir: A ? A.label : "", alarms: settings.alarms, static: true };
       fail("없는 주소");
     }
     if (p === "/api/task/update") return updateTask(body);
@@ -494,6 +499,7 @@ ${checkLines}
       if (s) settings = { ...settings, ...s };
       startAlarms();
     },
+    setCalendar(provider) { CAL = provider || null; },
     setVault(name) { settings.vault = name || ""; lsSet("wb.settings", settings); },
     get vault() { return settings.vault; },
     handle(path, body) {

@@ -340,6 +340,9 @@ textarea { width: 100%; resize: vertical; }
       </div></div>
     <div class="field" id="storageField" style="display:none"><label>저장 위치</label>
       <div class="row"><span id="storageNow" class="sm"></span><button type="button" class="quick" id="storageChange">저장 위치 바꾸기</button></div></div>
+    <div class="field" id="gcalBlock" style="display:none"><label>구글 캘린더</label>
+      <div class="row"><span id="gcalNow" class="sm"></span><button type="button" class="quick" id="gcalBtn">구글 캘린더 연결</button></div>
+      <div class="help" style="margin-top:6px">구글 로그인으로 <b>읽기 전용</b>으로 연결해요. 일정은 이 브라우저에서만 읽고 어디에도 저장하지 않아요.</div></div>
     <div id="icsBlock">
     <div class="field"><label>구글 캘린더 연결</label></div>
     <div class="help">구글 캘린더의 <b>비공개 주소(iCal 형식)</b>를 붙여 넣으면 일정이 달력에 같이 나와요.
@@ -825,6 +828,8 @@ $("#settingsBtn").onclick = async () => {
   const f = $("#settingsForm"); f.urls.value = "";
   try { const j = await api("/api/config"); for (const k of ["morning", "evening", "friday"]) f[k].value = j.alarms?.[k] || ""; } catch (e) {}
   $("#icsBlock").style.display = STATIC_MODE ? "none" : "";
+  $("#gcalBlock").style.display = STATIC_MODE ? "" : "none";
+  if (STATIC_MODE) updateGcalLabel();
   $("#storageField").style.display = STATIC_MODE ? "" : "none";
   if (STATIC_MODE) try { $("#storageNow").textContent = (await api("/api/config")).work_dir; } catch (e) {}
   $("#settingsModal").classList.add("on");
@@ -920,7 +925,58 @@ $("#restoreFile").onchange = async e => {
   e.target.value = "";
 };
 
+/* ---- 웹 모드: 구글 캘린더 ---- */
+let gcal = null;
+function gClientId() { return localStorage.getItem("wb.gclient") || (window.WB_CONFIG || {}).googleClientId || ""; }
+function updateGcalLabel() {
+  const on = !!gcal;
+  $("#gcalNow").textContent = on ? "연결됨" : (localStorage.getItem("wb.cal") === "1" ? "연결이 끊겼어요 (다시 연결해 주세요)" : "연결 안 됨");
+  $("#gcalBtn").textContent = on ? "연결 해제" : "구글 캘린더 연결";
+}
+async function refreshCalendar() {
+  await loadConfig();
+  if (calendar) calendar.refetchEvents(); else refreshEventsForSide();
+  renderSide();
+}
+async function connectGcal() {
+  let id = gClientId();
+  if (!id) {
+    id = (prompt("Google OAuth 클라이언트 ID를 입력하세요.\n(배포자가 알려주는 값이에요. README의 '구글 드라이브(B) 설정' 참고)") || "").trim();
+    if (!id) return;
+    try { localStorage.setItem("wb.gclient", id); } catch (e) {}
+  }
+  const p = WBAdapters.calendarProvider(id);
+  await p.connect();
+  gcal = p; WBCore.setCalendar(p);
+  try { localStorage.setItem("wb.cal", "1"); } catch (e) {}
+  await refreshCalendar();
+  toast("구글 캘린더를 연결했어요");
+}
+async function disconnectGcal() {
+  gcal = null; WBCore.setCalendar(null); events = [];
+  try { localStorage.removeItem("wb.cal"); } catch (e) {}
+  await refreshCalendar();
+  toast("구글 캘린더 연결을 해제했어요");
+}
+document.addEventListener("click", async e => {
+  if (e.target.id !== "gcalBtn") return;
+  try { gcal ? await disconnectGcal() : await connectGcal(); } catch (err) { toast(err.message); }
+  updateGcalLabel();
+});
+async function restoreGcal() {
+  if (!STATIC_MODE || localStorage.getItem("wb.cal") !== "1" || !gClientId()) return;
+  try {
+    const p = WBAdapters.calendarProvider(gClientId());
+    await p.silent();
+    gcal = p; WBCore.setCalendar(p);
+    await refreshCalendar();
+  } catch (err) {
+    renderNotice([err.message + " — 설정(⚙)에서 구글 캘린더를 다시 연결해 주세요"]);
+  }
+}
+
 function afterBoot() {
+  restoreGcal();
   setView(view);
   if (view !== "calendar") refreshEventsForSide();
   // 입력 중일 때는 자동 새로고침을 미룬다 (쓰던 글이 사라지지 않게)
