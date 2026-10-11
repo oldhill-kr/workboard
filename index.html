@@ -324,7 +324,7 @@ textarea { width: 100%; resize: vertical; }
       <button class="btn" data-store="folder">C로 폴더 고르기</button>
     </div>
     <div id="storageMsg" class="sm" style="margin-top:8px;color:var(--red)"></div>
-    <div class="actions"><button type="button" class="btn" id="storageBackup" style="margin-right:auto">백업 내려받기</button><button type="button" class="btn" id="storageRestore">백업 불러오기</button><button type="button" class="btn" data-close id="storageClose">닫기</button></div>
+    <div class="actions"><button type="button" class="btn" id="storageBack" style="display:none">← 뒤로</button><button type="button" class="btn" id="storageBackup" style="margin-right:auto">백업 내려받기</button><button type="button" class="btn" id="storageRestore">백업 불러오기</button><button type="button" class="btn" data-close id="storageClose">닫기</button></div>
     <input type="file" id="restoreFile" accept="application/json" hidden>
   </div>
 </div>
@@ -898,6 +898,7 @@ function openStorageModal(msg) {
   $("#gClientId").value = localStorage.getItem("wb.gclient") || (window.WB_CONFIG || {}).googleClientId || "";
   $("#vaultName").value = WBCore.vault || "";
   $("#storageClose").style.display = window.__booted ? "" : "none";
+  $("#storageBack").style.display = window.__confirmBack ? "" : "none";
   $("#storageModal").classList.add("on");
 }
 async function chooseStorage(kind) {
@@ -905,6 +906,7 @@ async function chooseStorage(kind) {
   try {
     await useBackend(kind, { clientId: $("#gClientId").value.trim(), vault: $("#vaultName").value.trim() });
     $("#storageModal").classList.remove("on");
+    window.__confirmBack = false;
     if (!window.__booted) { window.__booted = true; afterBoot(); }
     toast("저장 위치를 연결했어요");
   } catch (e) { if (e.name !== "AbortError") m.textContent = e.message; }
@@ -914,6 +916,7 @@ document.addEventListener("click", e => {
   if (b) return chooseStorage(b.dataset.store);
   if (e.target.id === "storageChange") { $("#settingsModal").classList.remove("on"); openStorageModal(); }
 });
+$("#storageBack").onclick = () => { $("#storageModal").classList.remove("on"); window.__confirmBack = false; $("#confirmModal").classList.add("on"); };
 $("#storageBackup").onclick = async () => {
   try {
     const a = WBAdapters.localAdapter();
@@ -1018,7 +1021,7 @@ function afterBoot() {
     await new Promise(done => {
       $("#confirmWhere").textContent = where;
       $("#confirmModal").classList.add("on");
-      $("#confirmChange").onclick = () => { $("#confirmModal").classList.remove("on"); openStorageModal(); done(false); };
+      $("#confirmChange").onclick = () => { $("#confirmModal").classList.remove("on"); window.__confirmBack = true; openStorageModal(); };
       $("#confirmOk").onclick = async () => {
         $("#confirmMsg").textContent = "";
         try {
