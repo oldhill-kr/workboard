@@ -82,6 +82,11 @@ a.btn { color: var(--text); text-decoration: none; }
 .filters .label { color: var(--faint); font-size: 12px; margin-right: 4px; }
 .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; color: var(--sub); }
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.pchip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; color: var(--sub); }
+.pchip.on { color: var(--text); border-color: var(--text); }
+.pchip .pmark { width: 8px; height: 8px; border-radius: 2px; background: var(--faint); }
+.pchip.pri-높음 .pmark { background: var(--red); } .pchip.pri-보통 .pmark { background: var(--accent); } .pchip.pri-낮음 .pmark { background: var(--line); border: 1px solid var(--faint); }
+.filter-break { flex-basis: 100%; height: 0; }
 .chip.on { color: var(--text); border-color: var(--text); }
 .toggle { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; color: var(--sub); font-size: 12.5px; }
 
@@ -160,6 +165,13 @@ main { padding: 14px 24px 24px; }
 .fc-event.task .fc-event-main { color: var(--text); }
 .fc-event.task.nodue { border-style: dashed; border-left-style: solid; background: transparent; }
 .fc-event.task.late { background: var(--red-soft); border-color: var(--red); border-left-color: var(--red); }
+/* 우선순위: 높음은 굵게 + ▲ 표시, 낮음은 흐리게 + ▽ 표시 */
+.fc-event.task.pri-hi { border-left-width: 5px; }
+.fc-event.task.pri-hi .ev-task { font-weight: 700; }
+.fc-event.task.pri-lo { background: transparent; border-color: var(--line); }
+.fc-event.task.pri-lo .ev-task { color: var(--sub); font-weight: 400; }
+.pri-mark { flex: none; font-size: 9px; line-height: 1; }
+.pri-mark.hi { color: var(--red); } .pri-mark.lo { color: var(--faint); }
 .fc-event.task.done { opacity: .55; text-decoration: line-through; }
 .ev-task { display: flex; gap: 5px; align-items: center; padding: 1px 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .ev-task .box { width: 10px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; flex: none; opacity: .7; }
@@ -271,6 +283,8 @@ textarea { width: 100%; resize: vertical; }
           <span><i style="border:1.5px solid var(--sub)"></i>업무 마감 (끌어서 마감일 변경)</span>
           <span><i style="border:1.5px dashed var(--sub)"></i>마감 미정 (등록일에 표시)</span>
           <span><i style="background:var(--red-soft);border:1.5px solid var(--red)"></i>지연</span>
+          <span><b style="color:var(--red);font-size:10px">▲</b> <b>우선순위 높음 (굵게)</b></span>
+          <span><span style="color:var(--faint);font-size:10px">▽</span> <span style="color:var(--sub)">낮음 (흐리게)</span></span>
         </div>
       </div>
       <aside class="side" id="side"></aside>
@@ -382,7 +396,8 @@ async function loadHolidays() {
 }
 function holidayClass(d) { const h = holidays[isoDate(d)]; return h && h.kind === "holiday" ? ["is-holiday"] : []; }
 let tasks = [], today = isoDate(new Date()), events = [], calendar = null, current = null;
-let projectFilter = new Set(), showDone = false, icsCount = 0;
+let projectFilter = new Set(), priorityFilter = new Set(), showDone = false, icsCount = 0;
+const PRIORITIES = ["높음", "보통", "낮음"];
 let view = "board";
 try { view = localStorage.getItem("wb.view") || "board"; showDone = localStorage.getItem("wb.done") === "1"; } catch (e) {}
 
@@ -414,7 +429,9 @@ function ddayLabel(t) {
   if (n < 0) return { text: `D+${-n}`, cls: "late" };
   return { text: `D-${n}`, cls: n <= 2 ? "soon" : "" };
 }
-function visible(t) { return projectFilter.size === 0 || projectFilter.has(t.project); }
+function visible(t) {
+  return (projectFilter.size === 0 || projectFilter.has(t.project)) && (priorityFilter.size === 0 || priorityFilter.has(t.priority));
+}
 function toast(msg) { const el = $("#toast"); el.textContent = msg; el.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 1800); }
 
 let STATIC_MODE = false;  // true: 서버 없이 브라우저에서만 동작 (GitHub Pages 등)
@@ -459,10 +476,15 @@ function renderFilters() {
   const counts = {};
   tasks.filter(t => showDone || isOpen(t)).forEach(t => counts[t.project] = (counts[t.project] || 0) + 1);
   const names = Object.keys(counts).sort();
+  const pcounts = {};  // 우선순위 칩의 개수는 선택한 프로젝트 안에서 센다
+  tasks.filter(t => (showDone || isOpen(t)) && (projectFilter.size === 0 || projectFilter.has(t.project))).forEach(t => pcounts[t.priority] = (pcounts[t.priority] || 0) + 1);
   $("#filters").innerHTML = `<span class="label">프로젝트</span>` +
     `<button class="chip ${projectFilter.size ? "" : "on"}" data-p="">전체</button>` +
     names.map(p => `<button class="chip ${projectFilter.has(p) ? "on" : ""}" data-p="${esc(p)}"><span class="dot" style="background:${projColor(p)}"></span>${esc(p)} <span style="color:var(--faint)">${counts[p]}</span></button>`).join("") +
     (archived.length ? `<button class="archbtn" id="archBtn">📦 보관함 ${archived.length}</button>` : "") +
+    `<span class="filter-break"></span><span class="label">우선순위</span>` +
+    `<button class="pchip ${priorityFilter.size ? "" : "on"}" data-pri="">전체</button>` +
+    PRIORITIES.map(pr => `<button class="pchip pri-${pr} ${priorityFilter.has(pr) ? "on" : ""}" data-pri="${pr}"><span class="pmark"></span>${pr} <span style="color:var(--faint)">${pcounts[pr] || 0}</span></button>`).join("") +
     `<label class="toggle"><input type="checkbox" id="doneToggle" ${showDone ? "checked" : ""}> 완료·보류 보기</label>`;
 }
 
@@ -548,14 +570,18 @@ function renderNotice(errors = []) {
 /* ---- 달력 ---- */
 function initCalendar() {
   calendar = new FullCalendar.Calendar($("#calendar"), {
+    eventOrder: (a, b) => {  // 같은 날 안에서는 우선순위 높은 업무가 위로
+      const r = e => { const x = e.extendedProps || e; return x.kind === "task" ? (x.priRank < 0 ? 1 : x.priRank) : 1.5; };
+      return r(a) - r(b) || String(a.title).localeCompare(String(b.title));
+    },
     locale: "ko", initialView: "dayGridMonth", height: "auto", firstDay: 0, nowIndicator: true, dayMaxEvents: 6,
     headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listWeek" },
     buttonText: { today: "오늘", month: "월", week: "주", list: "목록" },
     eventSources: [
       { id: "tasks", events: (info, ok) => ok(tasks.filter(t => (t.due || t.created) && visible(t) && (showDone || isOpen(t))).map(t => ({
           id: t.id, title: t.title.replace(t.project + " - ", ""), start: t.due || t.created, allDay: true, editable: !!t.due,
-          classNames: ["task", t.due ? "" : "nodue", isLate(t) ? "late" : "", t.status === "완료" ? "done" : ""],
-          extendedProps: { kind: "task", project: t.project, color: projColor(t.project) } }))) },
+          classNames: ["task", t.due ? "" : "nodue", isLate(t) ? "late" : "", t.status === "완료" ? "done" : "", t.priority === "높음" ? "pri-hi" : t.priority === "낮음" ? "pri-lo" : ""],
+          extendedProps: { kind: "task", project: t.project, color: projColor(t.project), priority: t.priority, priRank: PRIORITIES.indexOf(t.priority) } }))) },
       { id: "gcal", events: async (info, ok, fail) => {
           if (!icsCount) { events = []; renderSide(); return ok([]); }
           try {
@@ -567,7 +593,9 @@ function initCalendar() {
     ],
     eventContent: arg => {
       if (arg.event.extendedProps.kind !== "task") return true;
-      return { html: `<div class="ev-task"><span class="box"></span>${esc(arg.event.title)}</div>` };
+      const pr = arg.event.extendedProps.priority;
+      const mark = pr === "높음" ? `<span class="pri-mark hi" title="우선순위 높음">▲</span>` : pr === "낮음" ? `<span class="pri-mark lo" title="우선순위 낮음">▽</span>` : `<span class="box"></span>`;
+      return { html: `<div class="ev-task">${mark}${esc(arg.event.title)}</div>` };
     },
     eventDidMount: arg => {
       if (arg.event.extendedProps.kind === "task") arg.el.style.setProperty("--pc", arg.event.extendedProps.color);
@@ -687,6 +715,15 @@ let archived = [];
 document.addEventListener("click", async e => {
   const card = e.target.closest(".card, .side .item.task");
   if (card) return openDrawer(card.dataset.id);
+  const pchip = e.target.closest(".pchip");
+  if (pchip) {
+    const pr = pchip.dataset.pri;
+    if (!pr) priorityFilter.clear();
+    else if (e.ctrlKey || e.metaKey) priorityFilter.has(pr) ? priorityFilter.delete(pr) : priorityFilter.add(pr);
+    else if (priorityFilter.size === 1 && priorityFilter.has(pr)) priorityFilter.clear();
+    else { priorityFilter.clear(); priorityFilter.add(pr); }
+    return renderAll();
+  }
   const chip = e.target.closest(".chip");
   if (chip) {
     const p = chip.dataset.p;
