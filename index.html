@@ -785,6 +785,8 @@ document.addEventListener("change", async e => {
 document.addEventListener("keydown", e => {
   if (e.isComposing) return;  // 한글 조합 중 Enter·Esc는 무시
   if (e.key === "Escape" && e.target.id === "checkEdit") { editingCheck = null; e.target.remove(); const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); return; }
+  // 새 업무 팝업은 쓰던 내용이 사라지지 않도록 취소·만들기 버튼으로만 닫는다
+  if (e.key === "Escape" && $("#newModal").classList.contains("on")) return;
   if (e.key === "Escape") { document.querySelectorAll(".modal.on").forEach(m => m.classList.remove("on")); closeDrawer(); }
   if (e.key === "Enter" && e.target.id === "logInput") addLog();
   if (e.key === "Enter" && e.target.id === "checkInput") addCheck();
@@ -824,7 +826,7 @@ function openNew(due, project) {
   $("#newModal").classList.add("on"); setTimeout(() => f.title.focus(), 30);
 }
 $("#newBtn").onclick = () => openNew("");
-$("#newModal").addEventListener("click", e => { const q = e.target.closest(".quick"); if (q) $("#newDue").value = quickDate(q.dataset.q); if (e.target.id === "newModal") e.target.classList.remove("on"); });
+$("#newModal").addEventListener("click", e => { const q = e.target.closest(".quick"); if (q) $("#newDue").value = quickDate(q.dataset.q); });
 $("#archiveModal").addEventListener("click", e => { if (e.target.id === "archiveModal") e.target.classList.remove("on"); });
 $("#newForm").onsubmit = async e => {
   e.preventDefault();
