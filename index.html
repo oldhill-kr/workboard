@@ -125,7 +125,13 @@ body[data-mode="work"] .tabs button[data-view="routine"] { display: none; }
 .r-top li:nth-child(-n+3) .no { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); }
 .r-top .nm { flex: 1; font-weight: 600; } .r-top .pc { color: var(--sub); font-variant-numeric: tabular-nums; }
 .r-edit-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
-.r-edit-row .re-emoji { width: 52px; text-align: center; } .r-edit-row .re-name { flex: 1; }
+.r-edit-row .re-name { flex: 1; }
+.r-edit-row .re-icon { width: 46px; height: 38px; font-size: 20px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); cursor: pointer; }
+.r-edit-row .re-icon:hover { border-color: var(--green); }
+.re-pal { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; margin: -2px 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.re-pal button { width: 36px; height: 36px; font-size: 19px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; }
+.re-pal button:hover, .re-pal button.on { background: var(--panel); border-color: var(--green); }
+.re-pal input { width: 84px; height: 36px; text-align: center; }
 
 body[data-view="growth"] .filters, body[data-view="growth"] #projSummary { display: none; }
 .g-wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
@@ -1335,9 +1341,30 @@ async function toggleRoutine(rid, date) {
   try { await api("/api/routines/check", { routine: rid, date, done: !on }); }
   catch (e) { month[rid] = before; renderRoutine(); toast(e.message); }
 }
+const ROUTINE_ICONS = ["⏰", "💪", "📖", "✏️", "🧘", "🏃", "💧", "🥗", "😴", "💊", "🚶", "🧹", "💻", "🎧", "🎨", "🌱", "🦷", "🙏", "☀️", "📝", "💰", "📵", "🍎", "🧠"];
+function setRoutineIcon(row, emoji) {
+  row.querySelector(".re-emoji").value = emoji;
+  row.querySelector(".re-icon").textContent = emoji || "＋";
+}
+function toggleIconPalette(row) {
+  const open = row.nextElementSibling?.classList.contains("re-pal");
+  document.querySelectorAll("#routineRows .re-pal").forEach(p => p.remove());
+  if (open) return;
+  const cur = row.querySelector(".re-emoji").value;
+  row.insertAdjacentHTML("afterend", `<div class="re-pal">${ROUTINE_ICONS.map(e => `<button type="button" data-re-pick="${e}" class="${e === cur ? "on" : ""}">${e}</button>`).join("")}
+    <button type="button" data-re-pick="" title="아이콘 없음" style="font-size:12px;width:auto;padding:0 8px">없음</button>
+    <input type="text" maxlength="4" placeholder="직접 입력" class="re-custom"></div>`);
+}
+$("#routineRows").addEventListener("input", e => {
+  if (!e.target.classList.contains("re-custom")) return;
+  const row = e.target.closest(".re-pal").previousElementSibling;
+  const v = e.target.value.trim();
+  if (v) setRoutineIcon(row, v);
+});
+$("#routineRows").addEventListener("keydown", e => { if (e.target.classList.contains("re-custom") && e.key === "Enter") { e.preventDefault(); e.target.closest(".re-pal").remove(); } });
 function openRoutineEditor() {
   const box = $("#routineRows");
-  const rowHTML = r => `<div class="r-edit-row"><input type="text" class="re-emoji" maxlength="4" placeholder="🙂" value="${esc(r.emoji || "")}">
+  const rowHTML = r => `<div class="r-edit-row"><button type="button" class="re-icon" data-re-icon title="아이콘 선택">${esc(r.emoji || "＋")}</button><input type="hidden" class="re-emoji" value="${esc(r.emoji || "")}">
     <input type="text" class="re-name" maxlength="40" placeholder="루틴 이름 (예: 5시 기상)" value="${esc(r.name || "")}" data-id="${esc(r.id || "")}">
     <button type="button" class="mini" data-re="up">↑</button><button type="button" class="mini" data-re="down">↓</button><button type="button" class="mini del" data-re="del">✕</button></div>`;
   box.innerHTML = (routines.routines.length ? routines.routines : [{}]).map(rowHTML).join("");
@@ -1363,17 +1390,26 @@ document.addEventListener("click", async e => {
       await api("/api/routines/list", { routines: ["⏰ 기상", "💪 운동", "📖 독서", "✏️ 공부", "🧘 명상"].map(s => ({ emoji: s.split(" ")[0], name: s.split(" ")[1] })) });
       await loadRoutines(); return renderRoutine();
     }
+    const pick = t.closest("[data-re-pick]");
+    if (pick) {
+      const pal = pick.closest(".re-pal"), row = pal.previousElementSibling;
+      setRoutineIcon(row, pick.dataset.rePick);
+      return pal.remove();
+    }
+    const ib = t.closest("[data-re-icon]");
+    if (ib) return toggleIconPalette(ib.closest(".r-edit-row"));
     const re = t.closest("[data-re]");
     if (re) {
       const row = re.closest(".r-edit-row"), act = re.dataset.re;
-      if (act === "del") row.remove();
+      if (act === "del") { if (row.nextElementSibling?.classList.contains("re-pal")) row.nextElementSibling.remove(); row.remove(); }
       else if (act === "up" && row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling);
       else if (act === "down" && row.nextElementSibling) row.parentNode.insertBefore(row.nextElementSibling, row);
       return;
     }
     if (t.id === "routineAddRow") {
-      $("#routineRows").insertAdjacentHTML("beforeend", $("#routineRows")._rowHTML({}));
-      $("#routineRows").lastElementChild.querySelector(".re-name").focus(); return;
+      const rows = $("#routineRows"), n = rows.querySelectorAll(".r-edit-row").length;
+      rows.insertAdjacentHTML("beforeend", rows._rowHTML({ emoji: ROUTINE_ICONS[n % ROUTINE_ICONS.length] }));  // 기본 아이콘을 채워 두고, 눌러서 바꿀 수 있다
+      rows.lastElementChild.querySelector(".re-name").focus(); return;
     }
   } catch (err) { toast(err.message); }
 });
