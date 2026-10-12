@@ -448,7 +448,8 @@ ${checkLines}
   }
   async function personalList() {
     const d = await readJson(SETTINGS_PATH);
-    return d && Array.isArray(d.personal_projects) ? d.personal_projects : [];
+    // 한 번도 지정한 적 없으면 '개인업무' 프로젝트를 개인(성장 보드) 쪽으로 본다
+    return d && Array.isArray(d.personal_projects) ? d.personal_projects : ["개인업무"];
   }
   async function listGrowth() {
     const reviews = [], goals = [];

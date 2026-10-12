@@ -860,7 +860,7 @@ def personal_projects():
             _save_vault_settings(doc)
         except Exception:
             pass
-    return set(old)
+    return set(old) if old else {"개인업무"}  # 한 번도 지정한 적 없으면 '개인업무'를 개인 프로젝트로 본다
 
 
 def _sections(body):
