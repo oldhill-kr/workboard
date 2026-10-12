@@ -977,11 +977,11 @@ function reviewDue() {
   const hasMonth = growth.reviews.some(r => r.kind === "월간" && r.period === mo);
   return { wk, mo, weekDue: !hasWeek && (dow === 5 || dow === 6 || dow === 0 || dow === 4), monthDue: !hasMonth && now.getDate() >= 25, hasWeek, hasMonth };
 }
-// 지연·정체: 마감이 지난 업무가 있거나, 열린 업무가 5일 넘게 그대로인 프로젝트
+// 지연·정체: 마감이 지난 개인(자기개발) 업무가 있거나, 열린 개인 업무가 5일 넘게 그대로인 프로젝트
 function nudges() {
   const by = {}, nowSec = Date.now() / 1000;
   for (const t of tasks) {
-    if (!isOpen(t)) continue;
+    if (!isOpen(t) || !isPersonal(t)) continue;  // 업무 프로젝트(상아미주 등)는 성장 응원에서 제외
     const p = by[t.project] || (by[t.project] = { project: t.project, late: 0, last: 0 });
     if (t.due && t.due < today) p.late++;
     p.last = Math.max(p.last, t.mtime);
