@@ -99,6 +99,8 @@ main { padding: 14px 24px 24px; }
 .col-head { display: flex; align-items: center; gap: 8px; padding: 4px 4px 10px; }
 .col-head h2 { margin: 0; font-size: 13.5px; font-weight: 700; }
 .col-head .n { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.done-section { margin-top: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.done-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .col-head .hint { margin-left: auto; color: var(--faint); font-size: 11.5px; }
 .col.late .col-head h2 { color: var(--red); }
 .col.wait .col-head h2 { color: var(--amber); }
@@ -273,7 +275,7 @@ textarea { width: 100%; resize: vertical; }
 
 <main>
   <div id="notice"></div>
-  <section class="view on" id="view-board"><div id="projSummary"></div><div class="board" id="board"></div></section>
+  <section class="view on" id="view-board"><div id="projSummary"></div><div class="board" id="board"></div><div id="doneSection"></div></section>
   <section class="view" id="view-calendar">
     <div class="cal-wrap">
       <div class="cal-box">
@@ -529,7 +531,7 @@ function renderProjectSummary() {
   </div>`;
 }
 function renderBoard() {
-  const cols = showDone ? [...COLS, { key: "done", title: "✅ 완료·보류", hint: "" }] : COLS;
+  const cols = COLS;  // 완료·보류는 가로 스크롤 밖으로 밀리지 않도록 보드 아래 별도 영역에 표시
   const order = (a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.priority === "높음" ? -1 : 0) - (b.priority === "높음" ? -1 : 0);
   $("#board").style.setProperty("--cols", cols.length);
   $("#board").innerHTML = cols.map(c => {
@@ -538,6 +540,9 @@ function renderBoard() {
     return `<div class="col ${c.cls || ""}"><div class="col-head"><h2>${c.title}</h2><span class="n">${list.length}</span><span class="hint">${c.hint}</span></div>
       <div class="cards">${list.map(cardHTML).join("") || `<div class="empty">없음</div>`}</div></div>`;
   }).join("");
+  const doneList = showDone ? tasks.filter(visible).filter(t => !isOpen(t)).sort((a, b) => b.mtime - a.mtime) : [];
+  $("#doneSection").innerHTML = showDone ? `<div class="done-section"><div class="col-head"><h2>✅ 완료·보류</h2><span class="n">${doneList.length}</span></div>
+    <div class="done-grid">${doneList.map(cardHTML).join("") || `<div class="empty">없음</div>`}</div></div>` : "";
 }
 
 function renderArchive() {
@@ -801,7 +806,7 @@ document.addEventListener("click", async e => {
   } catch (err) { toast(err.message); }
 });
 document.addEventListener("change", async e => {
-  if (e.target.id === "doneToggle") { showDone = e.target.checked; try { localStorage.setItem("wb.done", showDone ? "1" : "0"); } catch (x) {} return renderAll(); }
+  if (e.target.id === "doneToggle") { showDone = e.target.checked; try { localStorage.setItem("wb.done", showDone ? "1" : "0"); } catch (x) {} renderAll(); if (showDone) $("#doneSection").scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
   if (!current) return;
   try {
     if (e.target.id === "dueInput") await update({ id: current, due: e.target.value });
