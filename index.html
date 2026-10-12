@@ -128,10 +128,14 @@ body[data-mode="work"] .tabs button[data-view="routine"] { display: none; }
 .r-edit-row .re-name { flex: 1; }
 .r-edit-row .re-icon { width: 46px; height: 38px; font-size: 20px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); cursor: pointer; }
 .r-edit-row .re-icon:hover { border-color: var(--green); }
-.re-pal { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; margin: -2px 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
-.re-pal button { width: 36px; height: 36px; font-size: 19px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; }
-.re-pal button:hover, .re-pal button.on { background: var(--panel); border-color: var(--green); }
-.re-pal input { width: 84px; height: 36px; text-align: center; }
+.re-pal { padding: 8px; margin: -2px 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.re-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.re-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.re-pal .re-tabs button { width: auto; height: 28px; font-size: 12.5px; padding: 0 10px; border: 1px solid var(--line); border-radius: 14px; color: var(--sub); }
+.re-pal .re-tabs button.on { background: var(--green); border-color: var(--green); color: #fff; }
+.re-grid button { width: 36px; height: 36px; font-size: 19px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; }
+.re-grid button:hover, .re-grid button.on { background: var(--panel); border-color: var(--green); }
+.re-grid input { width: 84px; height: 36px; text-align: center; }
 
 body[data-view="growth"] .filters, body[data-view="growth"] #projSummary { display: none; }
 .g-wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
@@ -1341,19 +1345,33 @@ async function toggleRoutine(rid, date) {
   try { await api("/api/routines/check", { routine: rid, date, done: !on }); }
   catch (e) { month[rid] = before; renderRoutine(); toast(e.message); }
 }
-const ROUTINE_ICONS = ["⏰", "💪", "📖", "✏️", "🧘", "🏃", "💧", "🥗", "😴", "💊", "🚶", "🧹", "💻", "🎧", "🎨", "🌱", "🦷", "🙏", "☀️", "📝", "💰", "📵", "🍎", "🧠"];
+const ROUTINE_ICON_CATS = {
+  "건강·운동": ["💪", "🏃", "🚶", "🧘", "🚴", "🏊", "💧", "🥗", "💊", "😴"],
+  "공부·성장": ["📖", "✏️", "📝", "💻", "🎧", "🧠", "🌐", "🎓", "🔬", "🎹"],
+  "생활·집안": ["🧹", "🍳", "🧺", "🛒", "🪴", "🐶", "☀️", "⏰", "🪥", "🚿"],
+  "마음·휴식": ["🙏", "🌱", "🎨", "🎬", "☕", "🛁", "📵", "🌙", "😊", "❤️"],
+  "일·돈": ["💰", "📊", "📧", "📅", "📞", "🗂️", "🎯", "🚗", "✅", "📈"],
+};
+const ROUTINE_ICONS = Object.values(ROUTINE_ICON_CATS).flat();
+let iconCat = Object.keys(ROUTINE_ICON_CATS)[0];
 function setRoutineIcon(row, emoji) {
   row.querySelector(".re-emoji").value = emoji;
   row.querySelector(".re-icon").textContent = emoji || "＋";
+}
+function iconPaletteHTML(cat, cur) {
+  return `<div class="re-tabs">${Object.keys(ROUTINE_ICON_CATS).map(c => `<button type="button" data-re-cat="${c}" class="${c === cat ? "on" : ""}">${c}</button>`).join("")}</div>
+    <div class="re-grid">${ROUTINE_ICON_CATS[cat].map(e => `<button type="button" data-re-pick="${e}" class="${e === cur ? "on" : ""}">${e}</button>`).join("")}
+    <button type="button" data-re-pick="" title="아이콘 없음" style="font-size:12px;width:auto;padding:0 8px">없음</button>
+    <input type="text" maxlength="4" placeholder="직접 입력" class="re-custom"></div>`;
 }
 function toggleIconPalette(row) {
   const open = row.nextElementSibling?.classList.contains("re-pal");
   document.querySelectorAll("#routineRows .re-pal").forEach(p => p.remove());
   if (open) return;
   const cur = row.querySelector(".re-emoji").value;
-  row.insertAdjacentHTML("afterend", `<div class="re-pal">${ROUTINE_ICONS.map(e => `<button type="button" data-re-pick="${e}" class="${e === cur ? "on" : ""}">${e}</button>`).join("")}
-    <button type="button" data-re-pick="" title="아이콘 없음" style="font-size:12px;width:auto;padding:0 8px">없음</button>
-    <input type="text" maxlength="4" placeholder="직접 입력" class="re-custom"></div>`);
+  const own = Object.keys(ROUTINE_ICON_CATS).find(c => ROUTINE_ICON_CATS[c].includes(cur));  // 지금 쓰는 아이콘이 있는 분류부터 연다
+  if (own) iconCat = own;
+  row.insertAdjacentHTML("afterend", `<div class="re-pal">${iconPaletteHTML(iconCat, cur)}</div>`);
 }
 $("#routineRows").addEventListener("input", e => {
   if (!e.target.classList.contains("re-custom")) return;
@@ -1389,6 +1407,13 @@ document.addEventListener("click", async e => {
     if (t.id === "routineSeedBtn") {
       await api("/api/routines/list", { routines: ["⏰ 기상", "💪 운동", "📖 독서", "✏️ 공부", "🧘 명상"].map(s => ({ emoji: s.split(" ")[0], name: s.split(" ")[1] })) });
       await loadRoutines(); return renderRoutine();
+    }
+    const cat = t.closest("[data-re-cat]");
+    if (cat) {
+      iconCat = cat.dataset.reCat;
+      const pal = cat.closest(".re-pal");
+      pal.innerHTML = iconPaletteHTML(iconCat, pal.previousElementSibling.querySelector(".re-emoji").value);
+      return;
     }
     const pick = t.closest("[data-re-pick]");
     if (pick) {
