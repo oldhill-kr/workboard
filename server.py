@@ -725,7 +725,8 @@ def build_alarm(kind):
     """알림 내용 (title, lines). 보낼 게 없으면 None."""
     today = date.today().isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
-    open_ = [t for t in list_tasks() if t["status"] not in ("완료", "보류")]
+    personal = personal_projects()  # 개인 프로젝트는 업무 알림에서 뺀다
+    open_ = [t for t in list_tasks() if t["status"] not in ("완료", "보류") and t["project"] not in personal]
     late = sorted([t for t in open_ if t["due"] and t["due"] < today], key=lambda t: t["due"])
     due_today = [t for t in open_ if t["due"] == today]
     if kind == "morning":
@@ -757,6 +758,18 @@ def build_alarm(kind):
         if late:
             lines.append(f"지연 {len(late)}건: " + ", ".join(short(t) for t in late[:2]) + (" …" if len(late) > 2 else ""))
         return f"퇴근 전 체크 — 못 끝낸 업무 {len(due_today) + len(late)}건", lines
+    if kind in ("review_week", "review_month"):
+        word = "이번 주" if kind == "review_week" else "이번 달"
+        g = list_growth()
+        per = (date.today().strftime("%G-W%V") if kind == "review_week" else date.today().strftime("%Y-%m"))
+        want = "주간" if kind == "review_week" else "월간"
+        done = any(r["kind"] == want and r["period"] == per for r in g["reviews"])
+        lines = [f"{word}{'를' if kind == 'review_week' else '을'} 돌아볼 시간이에요. 잘한 점 · 아쉬운 점 · 다음 다짐을 1분만 적어 보세요 (🌱 성장 탭)"]
+        if done:
+            return None  # 이미 썼으면 조용히 넘어간다
+        if late:
+            lines.append(f"참고: 지연된 업무 {len(late)}건")
+        return f"📝 {word} 회고 시간", lines
     if kind == "friday":
         monday = (date.today() - timedelta(days=date.today().weekday())).isoformat()
         done = [t for t in list_tasks() if t["status"] == "완료" and (t["completed"] or "") >= monday]
@@ -775,7 +788,7 @@ def load_state():
 
 
 # 알림별 보낼 수 있는 시간 범위: (시작 = 설정 시각, 이 시각까지만). PC를 늦게 켜도 범위 안이면 한 번 보낸다.
-ALARM_UNTIL = {"morning": "13:00", "evening": "21:00", "friday": "21:00"}
+ALARM_UNTIL = {"morning": "13:00", "evening": "21:00", "friday": "21:00", "review_week": "21:00", "review_month": "21:00"}
 
 
 def alarm_loop():
@@ -787,9 +800,11 @@ def alarm_loop():
             for kind, at in load_config().get("alarms", {}).items():
                 if not at or kind not in ALARM_UNTIL or state.get(kind) == today:
                     continue
-                if kind == "friday" and not is_last_workday(now.date()):
+                if kind in ("friday", "review_week") and not is_last_workday(now.date()):
                     continue
-                if kind != "friday" and (now.weekday() >= 5 or is_holiday(now.date())):  # 주말·공휴일엔 쉼
+                if kind == "review_month" and not is_last_workday_of_month(now.date()):
+                    continue
+                if kind not in ("friday", "review_week", "review_month") and (now.weekday() >= 5 or is_holiday(now.date())):  # 주말·공휴일엔 쉼
                     continue
                 if at <= hm <= ALARM_UNTIL[kind]:
                     # 먼저 기록해 둬야 알림이 실패해도 30초마다 반복되지 않는다
@@ -801,6 +816,292 @@ def alarm_loop():
         except Exception as e:
             print("알림 오류:", e)
         time.sleep(30)
+
+
+# ---------- 성장(회고·목표·선물) ----------
+
+GROWTH_DIR_NAME = "성장"
+REVIEW_KINDS = ("주간", "월간", "프로젝트")
+
+
+def growth_dir():
+    return Path(load_config()["work_dir"]) / GROWTH_DIR_NAME
+
+
+def personal_projects():
+    return set(load_config().get("personal_projects") or [])
+
+
+def _sections(body):
+    out, cur = {}, None
+    for line in body.splitlines():
+        if line.startswith("## "):
+            cur = line[3:].strip()
+            out[cur] = []
+        elif cur is not None:
+            out[cur].append(line)
+    return {k: "\n".join(v).strip() for k, v in out.items()}
+
+
+def _safe_text(s):
+    """본문 사용자 입력이 '## ' 제목처럼 읽히지 않도록 줄 맨 앞의 #을 바꾼다."""
+    return re.sub(r"(?m)^#", "＃", (s or "").strip())
+
+
+def _bool(v):
+    return str(v).strip().lower() == "true"
+
+
+def review_from_file(p):
+    fm, body, _ = read_note(p)
+    if fm.get("type") != "회고":
+        return None
+    sec = _sections(body)
+    try:
+        rating = int(fm.get("rating") or 0)
+    except ValueError:
+        rating = 0
+    return {
+        "id": p.name, "kind": fm.get("kind") or "주간", "period": fm.get("period") or "",
+        "project": fm.get("project") or "", "rating": rating, "created": fm.get("created") or "",
+        "good": sec.get("잘한 점", ""), "bad": sec.get("아쉬운 점·부족한 부분", ""), "next": sec.get("다음 다짐", ""),
+        "mtime": p.stat().st_mtime,
+    }
+
+
+def goal_from_file(p):
+    fm, body, _ = read_note(p)
+    if fm.get("type") != "목표":
+        return None
+    title = p.stem
+    for line in body.splitlines():
+        if line.startswith("# "):
+            title = line[2:].strip()
+            break
+    return {
+        "id": p.name, "title": title, "status": fm.get("status") or "진행중", "project": fm.get("project") or "",
+        "reward": fm.get("reward") or "", "due": fm.get("due") or None, "created": fm.get("created") or "",
+        "achieved": fm.get("achieved") or None, "reward_claimed": _bool(fm.get("reward_claimed")),
+        "mtime": p.stat().st_mtime,
+    }
+
+
+def list_growth():
+    d = growth_dir()
+    reviews, goals = [], []
+    if d.exists():
+        for p in sorted(d.glob("*.md")):
+            try:
+                r = review_from_file(p)
+                if r:
+                    reviews.append(r)
+                    continue
+                g = goal_from_file(p)
+                if g:
+                    goals.append(g)
+            except Exception as e:
+                print("성장 노트 읽기 실패:", p.name, e)
+    reviews.sort(key=lambda r: (r["created"], r["mtime"]), reverse=True)
+    goals.sort(key=lambda g: (g["status"] == "달성", -g["mtime"]))
+    return {"reviews": reviews, "goals": goals, "personal": sorted(personal_projects()), "today": date.today().isoformat()}
+
+
+def _growth_path(gid):
+    p = (growth_dir() / gid).resolve()
+    if p.parent != growth_dir().resolve() or p.suffix != ".md" or not p.exists():
+        raise ValueError("잘못된 id")
+    return p
+
+
+def _clean_name(s):
+    return re.sub(r'[\\/:*?"<>|#^\[\]]', " ", s).strip()
+
+
+def save_review(data):
+    kind = (data.get("kind") or "주간").strip()
+    if kind not in REVIEW_KINDS:
+        raise ValueError("회고 종류가 올바르지 않아요")
+    period = (data.get("period") or "").strip()
+    if not period:
+        raise ValueError("기간을 입력해 주세요")
+    project = (data.get("project") or "").strip()
+    try:
+        rating = max(0, min(5, int(data.get("rating") or 0)))
+    except (TypeError, ValueError):
+        rating = 0
+    good, bad, nxt = _safe_text(data.get("good")), _safe_text(data.get("bad")), _safe_text(data.get("next"))
+    if not (good or bad or nxt):
+        raise ValueError("잘한 점, 아쉬운 점, 다음 다짐 중 하나는 적어 주세요")
+    name = _clean_name(f"회고 - {period}" + (f" - {project}" if project else ""))
+    d = growth_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    with lock:
+        p = d / f"{name}.md"
+        created = date.today().isoformat()
+        if p.exists():  # 같은 기간·프로젝트 회고는 덮어써서 고친다 (처음 작성일은 유지)
+            old = read_note(p)[0]
+            created = old.get("created") or created
+        text = f"""---
+type: 회고
+kind: {kind}
+period: {period}
+project: {project}
+rating: {rating}
+created: {created}
+tags: [work, 회고]
+---
+
+# {name}
+
+## 잘한 점
+{good}
+
+## 아쉬운 점·부족한 부분
+{bad}
+
+## 다음 다짐
+{nxt}
+"""
+        p.write_text(text, encoding="utf-8", newline="")
+    return review_from_file(p)
+
+
+def create_goal(data):
+    title = (data.get("title") or "").strip()
+    if not title:
+        raise ValueError("목표를 입력해 주세요")
+    d = growth_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    name = _clean_name(f"목표 - {title}")
+    with lock:
+        p, i = d / f"{name}.md", 2
+        while p.exists():
+            p, i = d / f"{name} ({i}).md", i + 1
+        text = f"""---
+type: 목표
+status: 진행중
+project: {(data.get('project') or '').strip()}
+reward: {(data.get('reward') or '').strip()}
+due: {(data.get('due') or '').strip()}
+created: {date.today().isoformat()}
+achieved:
+reward_claimed: false
+tags: [work, 목표]
+---
+
+# {title}
+"""
+        p.write_text(text, encoding="utf-8", newline="")
+    return goal_from_file(p)
+
+
+def update_goal(data):
+    with lock:
+        p = _growth_path(data["id"])
+        text = p.read_text(encoding="utf-8")
+        if "status" in data:
+            if data["status"] not in ("진행중", "달성"):
+                raise ValueError("잘못된 상태")
+            text = set_frontmatter(text, "status", data["status"])
+            text = set_frontmatter(text, "achieved", date.today().isoformat() if data["status"] == "달성" else "")
+            if data["status"] != "달성":
+                text = set_frontmatter(text, "reward_claimed", "false")
+        if "reward_claimed" in data:
+            text = set_frontmatter(text, "reward_claimed", "true" if data["reward_claimed"] else "false")
+        if "reward" in data:
+            text = set_frontmatter(text, "reward", (data["reward"] or "").strip())
+        if "due" in data:
+            text = set_frontmatter(text, "due", (data["due"] or "").strip())
+        p.write_text(text, encoding="utf-8", newline="")
+    return goal_from_file(p)
+
+
+def delete_growth(data):
+    """회고·목표 노트를 지우지 않고 Work/_휴지통으로 옮긴다."""
+    with lock:
+        p = _growth_path(data["id"])
+        trash = Path(load_config()["work_dir"]) / "_휴지통"
+        trash.mkdir(exist_ok=True)
+        dest = trash / p.name
+        if dest.exists():
+            dest = trash / f"{p.stem} ({datetime.now():%Y%m%d-%H%M%S}){p.suffix}"
+        p.rename(dest)
+    return {"id": data["id"]}
+
+
+def is_last_workday_of_month(d):
+    if d.weekday() > 4 or is_holiday(d):
+        return False
+    n = d + timedelta(days=1)
+    while n.month == d.month:
+        if n.weekday() <= 4 and not is_holiday(n):
+            return False
+        n += timedelta(days=1)
+    return True
+
+
+# ---------- 루틴 달력 (매일 체크하는 습관) ----------
+
+ROUTINES_FILE = "루틴.json"
+
+
+def _routines_path():
+    return growth_dir() / ROUTINES_FILE
+
+
+def load_routines():
+    try:
+        data = json.loads(_routines_path().read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data.setdefault("routines", [])
+    data.setdefault("checks", {})
+    return data
+
+
+def _save_routines(data):
+    p = _routines_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(p)
+
+
+def set_routine_check(data):
+    rid, d, done = str(data.get("routine") or ""), str(data.get("date") or ""), bool(data.get("done"))
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+        raise ValueError("날짜 형식은 YYYY-MM-DD")
+    day = int(d[8:])
+    with lock:
+        doc = load_routines()
+        if not any(r.get("id") == rid for r in doc["routines"]):
+            raise ValueError("없는 루틴이에요. 새로고침 후 다시 해 주세요")
+        days = set(doc["checks"].setdefault(d[:7], {}).get(rid, []))
+        days.add(day) if done else days.discard(day)
+        doc["checks"][d[:7]][rid] = sorted(days)
+        _save_routines(doc)
+    return {"ok": True}
+
+
+def save_routine_list(data):
+    import uuid
+    items, out, seen = data.get("routines") or [], [], set()
+    for it in items:
+        name = (it.get("name") or "").strip()
+        if not name:
+            continue
+        rid = str(it.get("id") or "")
+        if not rid or rid in seen:
+            rid = "r" + uuid.uuid4().hex[:8]
+        seen.add(rid)
+        out.append({"id": rid, "name": name[:40], "emoji": (it.get("emoji") or "").strip()[:4]})
+    with lock:
+        doc = load_routines()
+        doc["routines"] = out
+        _save_routines(doc)
+    return {"routines": out}
 
 
 # ---------- HTTP ----------
@@ -834,7 +1135,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
             elif u.path == "/api/tasks":
-                self.send_json({"tasks": list_tasks(), "archived": archived_summary(), "colors": project_colors(), "today": date.today().isoformat()})
+                self.send_json({"tasks": list_tasks(), "archived": archived_summary(), "colors": project_colors(),
+                                "personal": sorted(personal_projects()), "today": date.today().isoformat()})
+            elif u.path == "/api/growth":
+                self.send_json(list_growth())
+            elif u.path == "/api/routines":
+                self.send_json(load_routines())
             elif u.path == "/api/events":
                 q = parse_qs(u.query)
                 start = date.fromisoformat(q.get("start", [date.today().isoformat()])[0][:10])
@@ -857,6 +1163,23 @@ class Handler(BaseHTTPRequestHandler):
             data = self.read_json()
             if u.path == "/api/task/update":
                 self.send_json({"task": update_task(data)})
+            elif u.path == "/api/routines/check":
+                self.send_json(set_routine_check(data))
+            elif u.path == "/api/routines/list":
+                self.send_json(save_routine_list(data))
+            elif u.path == "/api/growth/review":
+                self.send_json({"review": save_review(data)})
+            elif u.path == "/api/growth/goal":
+                self.send_json({"goal": create_goal(data)})
+            elif u.path == "/api/growth/goal/update":
+                self.send_json({"goal": update_goal(data)})
+            elif u.path == "/api/growth/delete":
+                self.send_json(delete_growth(data))
+            elif u.path == "/api/config/personal":
+                cfg = load_config()
+                cfg["personal_projects"] = [s.strip() for s in data.get("projects", []) if s.strip()]
+                save_config(cfg)
+                self.send_json({"personal": cfg["personal_projects"]})
             elif u.path == "/api/project/rename":
                 self.send_json(rename_project(data.get("from"), data.get("to")))
             elif u.path == "/api/project/archive":
