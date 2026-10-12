@@ -828,8 +828,39 @@ def growth_dir():
     return Path(load_config()["work_dir"]) / GROWTH_DIR_NAME
 
 
+VAULT_SETTINGS_FILE = ".업무보드-설정.json"  # 볼트(Work 폴더) 안에 둬서 웹 버전·다른 PC와 개인 프로젝트 목록을 공유한다
+
+
+def _vault_settings_path():
+    return Path(load_config()["work_dir"]) / VAULT_SETTINGS_FILE
+
+
+def _load_vault_settings():
+    try:
+        d = json.loads(_vault_settings_path().read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_vault_settings(doc):
+    p = _vault_settings_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def personal_projects():
-    return set(load_config().get("personal_projects") or [])
+    doc = _load_vault_settings()
+    if isinstance(doc.get("personal_projects"), list):
+        return set(doc["personal_projects"])
+    old = load_config().get("personal_projects") or []  # 예전 방식(config.json) → 한 번만 볼트 파일로 옮긴다
+    if old:
+        try:
+            doc["personal_projects"] = list(old)
+            _save_vault_settings(doc)
+        except Exception:
+            pass
+    return set(old)
 
 
 def _sections(body):
@@ -1177,9 +1208,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(delete_growth(data))
             elif u.path == "/api/config/personal":
                 cfg = load_config()
-                cfg["personal_projects"] = [s.strip() for s in data.get("projects", []) if s.strip()]
+                names = [s.strip() for s in data.get("projects", []) if s.strip()]
+                cfg["personal_projects"] = names
                 save_config(cfg)
-                self.send_json({"personal": cfg["personal_projects"]})
+                doc = _load_vault_settings()
+                doc["personal_projects"] = names
+                _save_vault_settings(doc)
+                self.send_json({"personal": names})
             elif u.path == "/api/project/rename":
                 self.send_json(rename_project(data.get("from"), data.get("to")))
             elif u.path == "/api/project/archive":

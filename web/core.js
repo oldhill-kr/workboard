@@ -17,7 +17,7 @@
   let CAL = null;               // 구글 캘린더 제공자 (없으면 일정 없음)
   const cache = new Map();      // 경로 → {text, mtime}
   let chain = Promise.resolve(); // 요청을 한 줄로 세워 동시 수정 방지
-  let settings = { vault: "", alarms: { morning: "08:40", evening: "17:00", friday: "16:00" } };
+  let settings = { vault: "", alarms: { morning: "08:40", evening: "17:00", friday: "16:00", review_week: "16:30", review_month: "16:30" } };
 
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
@@ -426,6 +426,189 @@ ${checkLines}
     return out;
   }
 
+
+  // ---------- 성장: 회고 · 목표(선물) · 루틴 · 개인 프로젝트 (서버 버전과 같은 파일 형식) ----------
+  const GROWTH_DIR = "성장", ROUTINES_PATH = "성장/루틴.json", SETTINGS_PATH = ".업무보드-설정.json";
+  const REVIEW_KINDS = ["주간", "월간", "프로젝트"];
+  const cleanName = s => s.replace(/[\\/:*?"<>|#^\[\]]/g, " ").trim();
+  const safeText = s => (s || "").trim().replace(/^#/gm, "＃");
+  function sectionsOf(body) {
+    const out = {}; let cur = null;
+    for (const line of norm(body).split("\n")) {
+      if (line.startsWith("## ")) { cur = line.slice(3).trim(); out[cur] = []; }
+      else if (cur !== null) out[cur].push(line);
+    }
+    for (const k of Object.keys(out)) out[k] = out[k].join("\n").trim();
+    return out;
+  }
+  async function readJson(path) {
+    const t = await A.read(path);
+    if (t == null) return null;
+    try { return JSON.parse(t); } catch (e) { return null; }
+  }
+  async function personalList() {
+    const d = await readJson(SETTINGS_PATH);
+    return d && Array.isArray(d.personal_projects) ? d.personal_projects : [];
+  }
+  async function listGrowth() {
+    const reviews = [], goals = [];
+    for (const f of (await A.list(GROWTH_DIR)).filter(x => x.name.endsWith(".md"))) {
+      const text = await A.read(`${GROWTH_DIR}/${f.name}`);
+      if (text == null) continue;
+      const { fm, body } = readNote(text);
+      if (fm.type === "회고") {
+        const sec = sectionsOf(body);
+        reviews.push({ id: f.name, kind: fm.kind || "주간", period: fm.period || "", project: fm.project || "", rating: parseInt(fm.rating || "0", 10) || 0,
+          created: fm.created || "", good: sec["잘한 점"] || "", bad: sec["아쉬운 점·부족한 부분"] || "", next: sec["다음 다짐"] || "", mtime: f.mtime });
+      } else if (fm.type === "목표") {
+        let title = f.name.replace(/\.md$/, "");
+        for (const l of norm(body).split("\n")) if (l.startsWith("# ")) { title = l.slice(2).trim(); break; }
+        goals.push({ id: f.name, title, status: fm.status || "진행중", project: fm.project || "", reward: fm.reward || "", due: fm.due || null,
+          created: fm.created || "", achieved: fm.achieved || null, reward_claimed: String(fm.reward_claimed).toLowerCase() === "true", mtime: f.mtime });
+      }
+    }
+    reviews.sort((a, b) => (b.created.localeCompare(a.created)) || (b.mtime - a.mtime));
+    goals.sort((a, b) => ((a.status === "달성") - (b.status === "달성")) || (b.mtime - a.mtime));
+    return { reviews, goals, personal: (await personalList()).sort(), today: todayISO() };
+  }
+  async function saveReview(d) {
+    const kind = (d.kind || "주간").trim();
+    if (!REVIEW_KINDS.includes(kind)) fail("회고 종류가 올바르지 않아요");
+    const period = (d.period || "").trim();
+    if (!period) fail("기간을 입력해 주세요");
+    const project = (d.project || "").trim();
+    const rating = Math.max(0, Math.min(5, parseInt(d.rating || "0", 10) || 0));
+    const good = safeText(d.good), bad = safeText(d.bad), next = safeText(d.next);
+    if (!good && !bad && !next) fail("잘한 점, 아쉬운 점, 다음 다짐 중 하나는 적어 주세요");
+    const name = cleanName(`회고 - ${period}` + (project ? ` - ${project}` : ""));
+    const path = `${GROWTH_DIR}/${name}.md`;
+    let created = todayISO();
+    const old = await A.read(path);
+    if (old != null) created = readNote(old).fm.created || created;   // 같은 기간·프로젝트는 덮어써서 고친다
+    const text = `---
+type: 회고
+kind: ${kind}
+period: ${period}
+project: ${project}
+rating: ${rating}
+created: ${created}
+tags: [work, 회고]
+---
+
+# ${name}
+
+## 잘한 점
+${good}
+
+## 아쉬운 점·부족한 부분
+${bad}
+
+## 다음 다짐
+${next}
+`;
+    await A.write(path, text);
+    return { review: (await listGrowth()).reviews.find(r => r.id === `${name}.md`) };
+  }
+  async function createGoal(d) {
+    const title = (d.title || "").trim();
+    if (!title) fail("목표를 입력해 주세요");
+    const base = cleanName(`목표 - ${title}`);
+    let name = `${base}.md`, i = 2;
+    while ((await A.read(`${GROWTH_DIR}/${name}`)) != null) name = `${base} (${i++}).md`;
+    const text = `---
+type: 목표
+status: 진행중
+project: ${(d.project || "").trim()}
+reward: ${(d.reward || "").trim()}
+due: ${(d.due || "").trim()}
+created: ${todayISO()}
+achieved:
+reward_claimed: false
+tags: [work, 목표]
+---
+
+# ${title}
+`;
+    await A.write(`${GROWTH_DIR}/${name}`, text);
+    return { goal: (await listGrowth()).goals.find(g => g.id === name) };
+  }
+  async function updateGoal(d) {
+    const path = `${GROWTH_DIR}/${d.id}`;
+    if (!d.id || d.id.includes("/")) fail("잘못된 id");
+    let text = await A.read(path);
+    if (text == null) fail("잘못된 id");
+    text = norm(text);
+    if ("status" in d) {
+      if (!["진행중", "달성"].includes(d.status)) fail("잘못된 상태");
+      text = setFrontmatter(text, "status", d.status);
+      text = setFrontmatter(text, "achieved", d.status === "달성" ? todayISO() : "");
+      if (d.status !== "달성") text = setFrontmatter(text, "reward_claimed", "false");
+    }
+    if ("reward_claimed" in d) text = setFrontmatter(text, "reward_claimed", d.reward_claimed ? "true" : "false");
+    if ("reward" in d) text = setFrontmatter(text, "reward", (d.reward || "").trim());
+    if ("due" in d) text = setFrontmatter(text, "due", (d.due || "").trim());
+    await A.write(path, text);
+    return { goal: (await listGrowth()).goals.find(g => g.id === d.id) };
+  }
+  async function deleteGrowth(d) {
+    if (!d.id || d.id.includes("/")) fail("잘못된 id");
+    const path = `${GROWTH_DIR}/${d.id}`, text = await A.read(path);
+    if (text == null) fail("잘못된 id");
+    let dest = `${TRASH_DIR}/${d.id}`;
+    if ((await A.read(dest)) != null) {
+      const n = new Date();
+      dest = `${TRASH_DIR}/${d.id.replace(/\.md$/, "")} (${n.getFullYear()}${pad(n.getMonth() + 1)}${pad(n.getDate())}-${pad(n.getHours())}${pad(n.getMinutes())}${pad(n.getSeconds())}).md`;
+    }
+    await A.write(dest, text);
+    await A.remove(path);
+    return { id: d.id };
+  }
+  async function loadRoutines() {
+    const d = (await readJson(ROUTINES_PATH)) || {};
+    return { routines: Array.isArray(d.routines) ? d.routines : [], checks: d.checks && typeof d.checks === "object" ? d.checks : {} };
+  }
+  const saveRoutines = doc => A.write(ROUTINES_PATH, JSON.stringify(doc, null, 1));
+  async function setRoutineCheck(d) {
+    const rid = String(d.routine || ""), date = String(d.date || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail("날짜 형식은 YYYY-MM-DD");
+    const doc = await loadRoutines();
+    if (!doc.routines.some(r => r.id === rid)) fail("없는 루틴이에요. 새로고침 후 다시 해 주세요");
+    const month = (doc.checks[date.slice(0, 7)] = doc.checks[date.slice(0, 7)] || {});
+    const days = new Set(month[rid] || []), day = Number(date.slice(8));
+    if (d.done) days.add(day); else days.delete(day);
+    month[rid] = [...days].sort((a, b) => a - b);
+    await saveRoutines(doc);
+    return { ok: true };
+  }
+  async function saveRoutineList(d) {
+    const out = [], seen = new Set();
+    for (const it of d.routines || []) {
+      const name = (it.name || "").trim();
+      if (!name) continue;
+      let id = String(it.id || "");
+      if (!id || seen.has(id)) id = "r" + Math.random().toString(16).slice(2, 10);
+      seen.add(id);
+      out.push({ id, name: name.slice(0, 40), emoji: (it.emoji || "").trim().slice(0, 4) });
+    }
+    const doc = await loadRoutines();
+    doc.routines = out;
+    await saveRoutines(doc);
+    return { routines: out };
+  }
+  async function setPersonal(d) {
+    const list = (d.projects || []).map(s => String(s).trim()).filter(s => s);
+    const doc = (await readJson(SETTINGS_PATH)) || {};
+    doc.personal_projects = list;
+    await A.write(SETTINGS_PATH, JSON.stringify(doc, null, 1));
+    return { personal: list };
+  }
+  const isoWeekKeyOf = d => {
+    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day);
+    const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+    return `${t.getUTCFullYear()}-W${pad(Math.ceil(((t - y0) / 86400000 + 1) / 7))}`;
+  };
+
   // ---------- 알림 (브라우저 탭이 열려 있을 때만) ----------
   async function alarmMessage(kind) {
     const today = todayISO(), tomorrow = addDaysISO(today, 1);
@@ -444,6 +627,14 @@ ${checkLines}
         [(dueToday.length ? "오늘 마감: " + dueToday.slice(0, 3).map(short).join(", ") : ""), (late.length ? `지연 ${late.length}건: ` + late.slice(0, 2).map(short).join(", ") : "")].filter(x => x)];
     }
     if (kind === "friday") return ["금요일 정기 업무 🔁", ["소스 정리 후 NAS 업데이트, 주간 회고 작성"]];
+    if (kind === "review_week" || kind === "review_month") {
+      const wk = kind === "review_week", per = wk ? isoWeekKeyOf(new Date()) : today.slice(0, 7);
+      const g = await listGrowth();
+      if (g.reviews.some(r => r.kind === (wk ? "주간" : "월간") && r.period === per)) return null;  // 이미 썼으면 조용히
+      const lines = [`${wk ? "이번 주를" : "이번 달을"} 돌아볼 시간이에요. 잘한 점 · 아쉬운 점 · 다음 다짐을 1분만 적어 보세요 (🌱 성장 탭)`];
+      if (late.length) lines.push(`참고: 지연된 업무 ${late.length}건`);
+      return [`📝 ${wk ? "이번 주" : "이번 달"} 회고 시간`, lines];
+    }
     return null;
   }
   function notify(title, lines) {
@@ -452,7 +643,7 @@ ${checkLines}
     new Notification(title, { body: lines.join("\n") });
     return true;
   }
-  const ALARM_UNTIL = { morning: "13:00", evening: "21:00", friday: "21:00" };
+  const ALARM_UNTIL = { morning: "13:00", evening: "21:00", friday: "21:00", review_week: "21:00", review_month: "21:00" };
   let alarmTimer = null;
   function startAlarms() {
     if (alarmTimer || typeof document === "undefined") return;
@@ -464,11 +655,20 @@ ${checkLines}
           if (!at || !(kind in ALARM_UNTIL) || state[kind] === today) continue;
           const H = root.WB_HOLIDAYS || {}, isHol = d => H[isoDate(d)]?.kind === "holiday";
           const wd = now.getDay(), weekend = wd === 0 || wd === 6;
-          if (kind === "friday") {
+          if (kind === "friday" || kind === "review_week") {
             // 이번 주 마지막 근무일 (금요일이 공휴일이면 목요일)
             if (weekend || isHol(now)) continue;
             let last = true;
             for (let i = 1; i <= 5 - wd; i++) { const d = new Date(now); d.setDate(d.getDate() + i); if (!isHol(d)) { last = false; break; } }
+            if (!last) continue;
+          } else if (kind === "review_month") {
+            // 이번 달 마지막 근무일
+            if (weekend || isHol(now)) continue;
+            let last = true;
+            for (let d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1); d.getMonth() === now.getMonth(); d.setDate(d.getDate() + 1)) {
+              const w = d.getDay();
+              if (w !== 0 && w !== 6 && !isHol(d)) { last = false; break; }
+            }
             if (!last) continue;
           } else if (weekend || isHol(now)) continue;
           if (at <= hm && hm <= ALARM_UNTIL[kind]) {
@@ -492,9 +692,18 @@ ${checkLines}
         catch (e) { return { events: [], errors: [e.message] }; }
       }
       if (p === "/api/holidays") return listHolidays(q.get("start") || "0000-01-01", q.get("end") || "9999-12-31");
+      if (p === "/api/growth") return listGrowth();
+      if (p === "/api/routines") return loadRoutines();
       if (p === "/api/config") return { ics_count: CAL ? 1 : 0, work_dir: A ? A.label : "", alarms: settings.alarms, static: true };
       fail("없는 주소");
     }
+    if (p === "/api/growth/review") return saveReview(body);
+    if (p === "/api/growth/goal") return createGoal(body);
+    if (p === "/api/growth/goal/update") return updateGoal(body);
+    if (p === "/api/growth/delete") return deleteGrowth(body);
+    if (p === "/api/routines/check") return setRoutineCheck(body);
+    if (p === "/api/routines/list") return saveRoutineList(body);
+    if (p === "/api/config/personal") return setPersonal(body);
     if (p === "/api/task/update") return updateTask(body);
     if (p === "/api/task/create") return createTask(body);
     if (p === "/api/task/delete") return deleteTask(body);

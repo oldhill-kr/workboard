@@ -1741,7 +1741,8 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(f);
+      const WEB_BUILD = "2026-10-13.2";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();
     // 지난번에 쓰던 저장 위치를 보여 주고, 확인 버튼을 누르면 업무보드를 연다
