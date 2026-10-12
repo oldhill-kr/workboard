@@ -193,15 +193,18 @@ def set_frontmatter(text, key, value):
     return "---" + nl + nl.join(lines) + nl + "---" + nl + text[m.end():]
 
 
-def append_log(text, entry):
-    """'## 진행 기록' 섹션 끝에 한 줄 추가 (없으면 섹션을 만든다)."""
+NOTE_BULLET_RE = re.compile(r"^(\s*[-*] )(?!\[[ xX]\] )(.*)$")
+
+
+def append_log(text, entry, section="진행 기록", dated=True):
+    """'## <섹션>' 끝에 글머리 한 줄 추가 (없으면 섹션을 만든다). 진행 기록은 날짜를 앞에 붙인다."""
     nl = "\r\n" if "\r\n" in text else "\n"
-    line = f"- {date.today().isoformat()}: {entry}"
+    line = f"- {date.today().isoformat()}: {entry}" if dated else f"- {entry}"
     lines = text.split(nl)
     try:
-        start = next(i for i, l in enumerate(lines) if l.strip() == "## 진행 기록")
+        start = next(i for i, l in enumerate(lines) if l.strip() == f"## {section}")
     except StopIteration:
-        return text.rstrip() + nl + nl + "## 진행 기록" + nl + line + nl
+        return text.rstrip() + nl + nl + f"## {section}" + nl + line + nl
     end = len(lines)
     for i in range(start + 1, len(lines)):
         if lines[i].startswith("## "):
@@ -221,6 +224,30 @@ def remove_frontmatter(text, key):
     lines = [l for l in m.group(1).splitlines() if not re.match(rf"^{re.escape(key)}\s*:", l)]
     nl = "\r\n" if "\r\n" in text[: m.end()] else "\n"
     return "---" + nl + nl.join(lines) + nl + "---" + nl + text[m.end():]
+
+
+def edit_note_line(text, section, idx, new_text):
+    """'## <섹션>' 안의 idx번째 글머리 줄을 고친다. new_text가 None이면 줄을 지운다."""
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    start = next((i for i, l in enumerate(lines) if l.strip() == f"## {section}"), None)
+    if start is None:
+        raise ValueError("그 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요")
+    n = -1
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("## "):
+            break
+        m = NOTE_BULLET_RE.match(lines[i])
+        if not m:
+            continue
+        n += 1
+        if n == idx:
+            if new_text is None:
+                del lines[i]
+            else:
+                lines[i] = m.group(1) + new_text
+            return nl.join(lines)
+    raise ValueError("그 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요")
 
 
 def edit_check_line(text, idx, new_text):
@@ -315,6 +342,21 @@ def update_task(data):
             text = add_check_line(text, data["add_check"].strip())
         if data.get("log"):
             text = append_log(text, data["log"].strip())
+        if data.get("add_note"):
+            n = data["add_note"]
+            sec, txt = (n.get("section") or "진행 기록").strip(), (n.get("text") or "").strip()
+            if not txt:
+                raise ValueError("내용을 입력해 주세요")
+            text = append_log(text, txt, sec, dated=(sec == "진행 기록"))
+        if data.get("edit_note"):
+            n = data["edit_note"]
+            txt = (n.get("text") or "").strip()
+            if not txt:
+                raise ValueError("내용을 입력해 주세요")
+            text = edit_note_line(text, (n.get("section") or "").strip(), int(n["idx"]), txt)
+        if data.get("delete_note"):
+            n = data["delete_note"]
+            text = edit_note_line(text, (n.get("section") or "").strip(), int(n["idx"]), None)
         p.write_text(text, encoding="utf-8", newline="")
     return task_from_file(p)
 

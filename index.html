@@ -212,6 +212,9 @@ textarea { width: 100%; resize: vertical; }
 @media (hover: none) { .check .mini { opacity: .6; } }
 .check:hover { background: var(--panel-2); }
 .check input { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--green); }
+.check.nline { align-items: flex-start; }
+.check .ntext { flex: 1; color: var(--sub); padding: 2px 0 2px 12px; position: relative; white-space: pre-wrap; word-break: break-word; }
+.check .ntext::before { content: "·"; position: absolute; left: 2px; }
 .check.done span { text-decoration: line-through; color: var(--faint); }
 .logrow { display: flex; gap: 6px; }
 .logrow input { flex: 1; }
@@ -654,12 +657,51 @@ function renderDrawer(t) {
           : `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span>${esc(c.text) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label>
               <button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
         <div class="logrow" style="margin-top:6px"><input type="text" id="checkInput" placeholder="＋ 할 일 추가 (Enter)"><button class="btn" id="checkBtn">추가</button></div></div>
-      <div class="field"><label>진행 기록 남기기</label><div class="logrow"><input type="text" id="logInput" placeholder="예: 현장 테스트 OK, 김영준 대리 회신 대기"><button class="btn" id="logBtn">추가</button></div></div>
-      <div class="note">${renderBody(t.body)}</div>
+      <div class="field"><label>기록 추가 <span style="color:var(--faint);font-weight:400">(진행 기록은 오늘 날짜가 자동으로 붙어요)</span></label>
+        <div class="logrow"><select id="noteSection" style="flex:none">${noteSectionNames(t.body).map(n => `<option ${n === lastNoteSection ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+          <input type="text" id="logInput" placeholder="예: 현장 테스트 OK, 김영준 대리 회신 대기"><button class="btn" id="logBtn">추가</button></div></div>
+      <div class="note">${renderNote(t)}</div>
     </div>
     <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
 }
-let editingCheck = null;
+let editingCheck = null, editingNote = null, lastNoteSection = "진행 기록";
+
+/* 본문의 '## 섹션' 아래 글머리 줄(진행 기록·배경 등)을 보여주고 고치고 지울 수 있게 한다 */
+function parseNote(body) {
+  const secs = []; let cur = null;
+  for (const l of body.split(/\r?\n/)) {
+    if (/^# /.test(l)) continue;
+    if (/^## /.test(l)) { cur = { name: l.slice(3).trim(), items: [], n: 0 }; secs.push(cur); continue; }
+    if (!cur || !l.trim()) continue;
+    const m = /^(\s*)[-*] (?!\[[ xX]\] )(.*)$/.exec(l);
+    if (m) cur.items.push({ bullet: true, idx: cur.n++, text: m[2], indent: m[1].length });
+    else if (!/^\s*[-*] \[[ xX]\] /.test(l)) cur.items.push({ bullet: false, text: l.trim() });
+  }
+  return secs.filter(s => s.name !== "할 일");
+}
+function noteSectionNames(body) {
+  const names = ["진행 기록", "배경"];
+  for (const s of parseNote(body)) if (!names.includes(s.name)) names.push(s.name);
+  return names;
+}
+function renderNote(t) {
+  return parseNote(t.body).map(s => `<h4>${esc(s.name)}</h4>` + s.items.map(it => {
+    if (!it.bullet) return `<p>${esc(it.text)}</p>`;
+    const ref = `data-nsec="${esc(encodeURIComponent(s.name))}" data-nidx="${it.idx}"`;
+    if (editingNote && editingNote.sec === s.name && editingNote.idx === it.idx)
+      return `<div class="check editing"><input type="text" id="noteEdit" ${ref} value="${esc(it.text)}"><button class="mini" data-nsave>저장</button><button class="mini" data-ncancel>취소</button></div>`;
+    return `<div class="check nline" style="margin-left:${it.indent * 6}px"><span class="ntext">${esc(it.text)}</span>
+      <button class="mini icon" data-nedit ${ref} title="고치기">✎</button><button class="mini icon del" data-ndel ${ref} title="지우기">✕</button></div>`;
+  }).join("")).join("");
+}
+async function saveNoteEdit() {
+  const inp = $("#noteEdit"); if (!inp) return;
+  const v = inp.value.trim();
+  if (!v) return toast("내용을 입력해 주세요");
+  const section = decodeURIComponent(inp.dataset.nsec), idx = Number(inp.dataset.nidx);
+  editingNote = null;
+  try { await update({ id: current, edit_note: { section, idx, text: v } }); toast("고쳤어요"); } catch (err) { toast(err.message); }
+}
 /* 다시 그려도 입력 중인 글·커서·스크롤이 유지되도록 */
 function redrawDrawer(t) {
   const dr = $("#drawer"), act = document.activeElement;
@@ -675,7 +717,7 @@ function redrawDrawer(t) {
 }
 function openDrawer(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
-  current = id; editingCheck = null; renderDrawer(t);
+  current = id; editingCheck = null; editingNote = null; renderDrawer(t);
   $("#drawer").classList.add("on"); $("#scrim").classList.add("on"); $("#drawer").setAttribute("aria-hidden", "false");
 }
 function closeDrawer() { current = null; $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); $("#drawer").setAttribute("aria-hidden", "true"); }
@@ -790,6 +832,19 @@ document.addEventListener("click", async e => {
       return;
     }
     if (e.target.id === "logBtn") addLog();
+    const ne = e.target.closest("[data-nedit]");
+    if (ne) {
+      editingNote = { sec: decodeURIComponent(ne.dataset.nsec), idx: Number(ne.dataset.nidx) };
+      redrawDrawer(t); const inp = $("#noteEdit"); if (inp) { inp.focus(); inp.select(); }
+      return;
+    }
+    if (e.target.closest("[data-ncancel]")) { editingNote = null; redrawDrawer(t); return; }
+    if (e.target.closest("[data-nsave]")) { await saveNoteEdit(); return; }
+    const nd = e.target.closest("[data-ndel]");
+    if (nd) {
+      await update({ id: t.id, delete_note: { section: decodeURIComponent(nd.dataset.nsec), idx: Number(nd.dataset.nidx) } });
+      toast("기록을 지웠어요"); return;
+    }
     if (e.target.id === "checkBtn") addCheck();
     const ed = e.target.closest("[data-edit]");
     if (ed) { editingCheck = Number(ed.dataset.edit); $("#checkEdit")?.remove(); redrawDrawer(t); const inp = $("#checkEdit"); inp.focus(); inp.select(); }
@@ -801,6 +856,7 @@ document.addEventListener("click", async e => {
   } catch (err) { toast(err.message); }
 });
 document.addEventListener("change", async e => {
+  if (e.target.id === "noteSection") { lastNoteSection = e.target.value; return; }
   if (e.target.id === "doneToggle") { showDone = e.target.checked; try { localStorage.setItem("wb.done", showDone ? "1" : "0"); } catch (x) {} return renderAll(); }
   if (!current) return;
   try {
@@ -821,6 +877,7 @@ document.addEventListener("change", async e => {
 });
 document.addEventListener("keydown", e => {
   if (e.isComposing) return;  // 한글 조합 중 Enter·Esc는 무시
+  if (e.key === "Escape" && e.target.id === "noteEdit") { editingNote = null; const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); return; }
   if (e.key === "Escape" && e.target.id === "checkEdit") { editingCheck = null; e.target.remove(); const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); return; }
   // 새 업무 팝업은 쓰던 내용이 사라지지 않도록 취소·만들기 버튼으로만 닫는다
   if (e.key === "Escape" && $("#newModal").classList.contains("on")) return;
@@ -828,11 +885,14 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.id === "logInput") addLog();
   if (e.key === "Enter" && e.target.id === "checkInput") addCheck();
   if (e.key === "Enter" && e.target.id === "checkEdit") saveCheckEdit();
+  if (e.key === "Enter" && e.target.id === "noteEdit") saveNoteEdit();
 });
 async function addLog() {
   const inp = $("#logInput"), v = inp.value.trim(); if (!v) return;
+  const section = $("#noteSection") ? $("#noteSection").value : "진행 기록";
+  lastNoteSection = section;
   inp.value = "";
-  try { await update({ id: current, log: v }); toast("진행 기록을 남겼어요"); $("#logInput")?.focus(); }
+  try { await update({ id: current, add_note: { section, text: v } }); toast(`'${section}'에 남겼어요`); $("#logInput")?.focus(); }
   catch (err) { const i = $("#logInput"); if (i) i.value = v; toast(err.message); }
 }
 async function addCheck() {

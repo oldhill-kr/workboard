@@ -66,16 +66,34 @@
     const pat = new RegExp("^" + escRe(key) + "\\s*:");
     return "---\n" + m[1].split("\n").filter(l => !pat.test(l)).join("\n") + "\n---\n" + text.slice(m[0].length);
   }
-  function appendLog(text, entry) {
-    const line = `- ${todayISO()}: ${entry}`, lines = text.split("\n");
-    const start = lines.findIndex(l => l.trim() === "## 진행 기록");
-    if (start < 0) return text.trimEnd() + "\n\n## 진행 기록\n" + line + "\n";
+  const NOTE_BULLET_RE = /^(\s*[-*] )(?!\[[ xX]\] )(.*)$/;
+  function appendLog(text, entry, section = "진행 기록", dated = true) {
+    const line = dated ? `- ${todayISO()}: ${entry}` : `- ${entry}`, lines = text.split("\n");
+    const start = lines.findIndex(l => l.trim() === `## ${section}`);
+    if (start < 0) return text.trimEnd() + `\n\n## ${section}\n` + line + "\n";
     let end = lines.length;
     for (let i = start + 1; i < lines.length; i++) if (lines[i].startsWith("## ")) { end = i; break; }
     let at = end;
     while (at - 1 > start && !lines[at - 1].trim()) at--;
     lines.splice(at, 0, line);
     return lines.join("\n");
+  }
+  function editNoteLine(text, section, idx, newText) {
+    const lines = text.split("\n");
+    const start = lines.findIndex(l => l.trim() === `## ${section}`);
+    if (start < 0) fail("그 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
+    let n = -1;
+    for (let i = start + 1; i < lines.length; i++) {
+      if (lines[i].startsWith("## ")) break;
+      const m = NOTE_BULLET_RE.exec(lines[i]);
+      if (!m) continue;
+      n++;
+      if (n === idx) {
+        if (newText === null) lines.splice(i, 1); else lines[i] = m[1] + newText;
+        return lines.join("\n");
+      }
+    }
+    fail("그 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
   }
   function editCheckLine(text, idx, newText) {
     let n = -1, found = false;
@@ -214,6 +232,17 @@
     }
     if (data.add_check) text = addCheckLine(text, data.add_check.trim());
     if (data.log) text = appendLog(text, data.log.trim());
+    if (data.add_note) {
+      const sec = (data.add_note.section || "진행 기록").trim(), txt = (data.add_note.text || "").trim();
+      if (!txt) fail("내용을 입력해 주세요");
+      text = appendLog(text, txt, sec, sec === "진행 기록");
+    }
+    if (data.edit_note) {
+      const txt = (data.edit_note.text || "").trim();
+      if (!txt) fail("내용을 입력해 주세요");
+      text = editNoteLine(text, (data.edit_note.section || "").trim(), Number(data.edit_note.idx), txt);
+    }
+    if (data.delete_note) text = editNoteLine(text, (data.delete_note.section || "").trim(), Number(data.delete_note.idx), null);
     await putNote(path, text);
     return { task: taskFromNote(data.id, text, cache.get(path).mtime) };
   }
