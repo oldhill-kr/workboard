@@ -196,8 +196,27 @@
   };
 
   // ---------- 업무 수정 ----------
+  async function renameTask(id, title) {
+    title = (title || "").trim();
+    if (!title) fail("업무 이름이 필요해요");
+    if (BAD_NAME_RE.test(title)) fail('이름에 \\ / : * ? " < > | # ^ [ ] 는 쓸 수 없어요');
+    const path = taskPath(id), c = cache.get(path);
+    const project = readNote(c.text).fm.project || "기타";
+    const stem = path.slice(TASK_DIR.length + 1).replace(/\.md$/, "");
+    let newStem = `${project} - ${title}`;
+    if (newStem === stem) return id;
+    let dest = `${TASK_DIR}/${newStem}.md`, i = 2;
+    while (dest !== path && cache.has(dest)) dest = `${TASK_DIR}/${newStem} (${i++}).md`;
+    newStem = dest.slice(TASK_DIR.length + 1).replace(/\.md$/, "");
+    let text = norm(c.text).replace(new RegExp("^# " + escRe(stem) + "\s*$", "m"), () => `# ${newStem}`);
+    await putNote(dest, text);
+    await dropNote(path);
+    await fixLinks({ [stem]: newStem });
+    return dest.slice(TASK_DIR.length + 1);
+  }
   async function updateTask(data) {
     await syncNotes();
+    if (data.new_title != null) data = { ...data, id: await renameTask(data.id, data.new_title) };
     if (data.project != null) data = { ...data, id: await changeTaskProject(data.id, data.project) };
     const path = taskPath(data.id);
     let text = norm(cache.get(path).text);

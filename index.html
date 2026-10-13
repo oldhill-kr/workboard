@@ -807,7 +807,9 @@ function renderBody(md) {
 function renderDrawer(t) {
   const pc = projColor(t.project);
   $("#drawer").innerHTML = `
-    <div class="d-head"><span class="proj" style="color:${pc}">● ${esc(t.project)}</span><h2>${esc(t.title)}</h2>
+    <div class="d-head"><span class="proj" style="color:${pc}">● ${esc(t.project)}</span>
+      ${editingTitle ? `<div class="logrow" style="margin-top:6px"><input type="text" id="titleEdit" value="${esc(shortTitle(t))}" style="font-size:16px;font-weight:700"><button class="mini" data-tsave>저장</button><button class="mini" data-tcancel>취소</button></div>`
+        : `<h2>${esc(t.title)} <button class="mini icon" data-tedit title="업무 이름 고치기">✎</button></h2>`}
       ${t.people.length ? `<div style="color:var(--sub);font-size:12.5px;margin-top:4px">관련: ${t.people.map(esc).join(", ")}</div>` : ""}
       <button class="d-close" data-close aria-label="닫기">×</button></div>
     <div class="d-body">
@@ -832,7 +834,8 @@ function renderDrawer(t) {
     </div>
     <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
 }
-let editingCheck = null, editingNote = null, lastNoteSection = "진행 기록";
+let editingCheck = null, editingNote = null, editingTitle = false, lastNoteSection = "진행 기록";
+function shortTitle(t) { const p = t.project + " - "; return t.title.startsWith(p) ? t.title.slice(p.length) : t.title; }
 
 /* 본문의 '## 섹션' 아래 글머리 줄(진행 기록·배경 등)을 보여주고 고치고 지울 수 있게 한다 */
 function parseNote(body) {
@@ -848,7 +851,7 @@ function parseNote(body) {
   return secs.filter(s => s.name !== "할 일");
 }
 function noteSectionNames(body) {
-  const names = ["진행 기록", "배경"];
+  const names = ["진행 기록", "배경", "관련 이슈"];
   for (const s of parseNote(body)) if (!names.includes(s.name)) names.push(s.name);
   return names;
 }
@@ -861,6 +864,14 @@ function renderNote(t) {
     return `<div class="check nline" style="margin-left:${it.indent * 6}px"><span class="ntext">${esc(it.text)}</span>
       <button class="mini icon" data-nedit ${ref} title="고치기">✎</button><button class="mini icon del" data-ndel ${ref} title="지우기">✕</button></div>`;
   }).join("")).join("");
+}
+async function saveTitle() {
+  const inp = $("#titleEdit"); if (!inp) return;
+  const v = inp.value.trim(), t = tasks.find(x => x.id === current);
+  if (!v) return toast("업무 이름을 입력해 주세요");
+  editingTitle = false;
+  if (!t || v === shortTitle(t)) return redrawDrawer(t);
+  try { await update({ id: current, new_title: v }); toast("업무 이름을 바꿨어요 (옵시디언 파일 이름과 링크도 함께 바뀌었어요)"); } catch (err) { toast(err.message); redrawDrawer(t); }
 }
 async function saveNoteEdit() {
   const inp = $("#noteEdit"); if (!inp) return;
@@ -885,7 +896,7 @@ function redrawDrawer(t) {
 }
 function openDrawer(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
-  current = id; editingCheck = null; editingNote = null; renderDrawer(t);
+  current = id; editingCheck = null; editingNote = null; editingTitle = false; renderDrawer(t);
   $("#drawer").classList.add("on"); $("#scrim").classList.add("on"); $("#drawer").setAttribute("aria-hidden", "false");
 }
 function closeDrawer() { current = null; $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); $("#drawer").setAttribute("aria-hidden", "true"); }
@@ -1528,6 +1539,12 @@ document.addEventListener("click", async e => {
       return;
     }
     if (e.target.id === "logBtn") addLog();
+    if (e.target.closest("[data-tedit]")) {
+      editingTitle = true; redrawDrawer(t); const ti = $("#titleEdit"); if (ti) { ti.focus(); ti.select(); }
+      return;
+    }
+    if (e.target.closest("[data-tcancel]")) { editingTitle = false; redrawDrawer(t); return; }
+    if (e.target.closest("[data-tsave]")) { await saveTitle(); return; }
     const ne = e.target.closest("[data-nedit]");
     if (ne) {
       editingNote = { sec: decodeURIComponent(ne.dataset.nsec), idx: Number(ne.dataset.nidx) };
@@ -1582,6 +1599,8 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.id === "checkInput") addCheck();
   if (e.key === "Enter" && e.target.id === "checkEdit") saveCheckEdit();
   if (e.key === "Enter" && e.target.id === "noteEdit") saveNoteEdit();
+  if (e.key === "Enter" && e.target.id === "titleEdit") saveTitle();
+  if (e.key === "Escape" && e.target.id === "titleEdit") { editingTitle = false; const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); }
 });
 async function addLog() {
   const inp = $("#logInput"), v = inp.value.trim(); if (!v) return;

@@ -294,7 +294,38 @@ def add_check_line(text, item):
     return nl.join(lines)
 
 
+def rename_task(task_id, new_title):
+    """업무 이름만 바꾼다. 파일 이름은 '프로젝트 - 이름', H1 제목과 Work 안의 [[링크]]도 함께 고친다. 새 id(파일명)를 돌려준다."""
+    new_title = (new_title or "").strip()
+    if not new_title:
+        raise ValueError("업무 이름이 필요해요")
+    if BAD_NAME_RE.search(new_title):
+        raise ValueError('이름에 \\ / : * ? " < > | # ^ [ ] 는 쓸 수 없어요')
+    d = tasks_dir()
+    with lock:
+        p = safe_task_path(task_id)
+        fm, _, text = read_note(p)
+        project = fm.get("project") or "기타"
+        stem = p.stem
+        new_stem = f"{project} - {new_title}"
+        if new_stem == stem:
+            return p.name
+        dest, i = d / f"{new_stem}.md", 2
+        while dest.exists() and dest != p:
+            dest, i = d / f"{new_stem} ({i}).md", i + 1
+        new_stem = dest.stem
+        if re.search(rf"^# {re.escape(stem)}\s*$", text, flags=re.M):
+            text = re.sub(rf"^# {re.escape(stem)}\s*$", lambda m: f"# {new_stem}", text, count=1, flags=re.M)
+        p.write_text(text, encoding="utf-8", newline="")
+        p.rename(dest)
+        _fix_links({stem: new_stem})
+    return dest.name
+
+
 def update_task(data):
+    if data.get("new_title") is not None:
+        data = dict(data)
+        data["id"] = rename_task(data["id"], data.pop("new_title"))
     if data.get("project") is not None:  # 프로젝트 변경은 파일 이름이 바뀌므로 먼저 처리하고 새 id로 이어간다
         data = dict(data)
         data["id"] = change_task_project(data["id"], data.pop("project"))
