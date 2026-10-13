@@ -196,6 +196,7 @@
   };
 
   // ---------- 업무 수정 ----------
+  const oneline = s => String(s || "").trim().replace(/[ \t]*\r?\n[ \t]*/g, "<br>");
   async function renameTask(id, title) {
     title = (title || "").trim();
     if (!title) fail("업무 이름이 필요해요");
@@ -247,19 +248,19 @@
     if ("edit_check" in data) {
       const nt = (data.text || "").trim();
       if (!nt) fail("내용을 입력해 주세요");
-      text = editCheckLine(text, Number(data.edit_check), nt);
+      text = editCheckLine(text, Number(data.edit_check), oneline(nt));
     }
-    if (data.add_check) text = addCheckLine(text, data.add_check.trim());
-    if (data.log) text = appendLog(text, data.log.trim());
+    if (data.add_check) text = addCheckLine(text, oneline(data.add_check));
+    if (data.log) text = appendLog(text, oneline(data.log));
     if (data.add_note) {
       const sec = (data.add_note.section || "진행 기록").trim(), txt = (data.add_note.text || "").trim();
       if (!txt) fail("내용을 입력해 주세요");
-      text = appendLog(text, txt, sec, sec === "진행 기록");
+      text = appendLog(text, oneline(txt), sec, sec === "진행 기록");
     }
     if (data.edit_note) {
       const txt = (data.edit_note.text || "").trim();
       if (!txt) fail("내용을 입력해 주세요");
-      text = editNoteLine(text, (data.edit_note.section || "").trim(), Number(data.edit_note.idx), txt);
+      text = editNoteLine(text, (data.edit_note.section || "").trim(), Number(data.edit_note.idx), oneline(txt));
     }
     if (data.delete_note) text = editNoteLine(text, (data.delete_note.section || "").trim(), Number(data.delete_note.idx), null);
     await putNote(path, text);

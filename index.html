@@ -322,7 +322,7 @@ textarea { width: 100%; resize: vertical; }
 .check .mini { opacity: 0; }
 .check:hover .mini, .check .mini:focus { opacity: 1; }
 .check.editing { align-items: center; }
-.check.editing input[type=text] { flex: 1; }
+.check.editing input[type=text], .check.editing textarea { flex: 1; }
 .check.editing .mini { opacity: 1; }
 .mini { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 8px; font-size: 12px; color: var(--sub); }
 .mini.icon { border-color: transparent; background: transparent; padding: 2px 6px; }
@@ -336,7 +336,11 @@ textarea { width: 100%; resize: vertical; }
 .check .ntext::before { content: "·"; position: absolute; left: 2px; }
 .check.done span { text-decoration: line-through; color: var(--faint); }
 .logrow { display: flex; gap: 6px; }
-.logrow input { flex: 1; }
+.logrow input, .logrow textarea { flex: 1; }
+textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.45; font: inherit; overflow-y: auto; }
+.check.editing textarea.ml { flex: 1; }
+.check .ctext { white-space: pre-wrap; word-break: break-word; }
+.logrow { align-items: flex-start; }
 .note { font-size: 13px; line-height: 1.6; color: var(--sub); border-top: 1px solid var(--line); padding-top: 12px; }
 .note h4 { color: var(--text); font-size: 13px; margin: 12px 0 4px; }
 .note p { margin: 2px 0; }
@@ -823,17 +827,21 @@ function renderDrawer(t) {
       <div class="field"><label>우선순위</label><div class="seg" id="segPri">${["높음", "보통", "낮음"].map(p => `<button data-p="${p}" class="${t.priority === p ? "on" : ""}">${p}</button>`).join("")}</div></div>
       <div class="field"><label>할 일 ${t.checks.length ? `${t.checks.filter(c => c.done).length}/${t.checks.length}` : ""}</label>
         <div class="checks">${t.checks.map((c, i) => editingCheck === i
-          ? `<div class="check editing"><input type="text" id="checkEdit" data-ei="${i}" value="${esc(c.text)}"><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
-          : `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span>${esc(c.text) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label>
+          ? `<div class="check editing"><textarea rows="1" class="ml" id="checkEdit" data-ei="${i}">${esc(fromStore(c.text))}</textarea><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
+          : `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span class="ctext">${esc(fromStore(c.text)) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label>
               <button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
-        <div class="logrow" style="margin-top:6px"><input type="text" id="checkInput" placeholder="＋ 할 일 추가 (Enter)"><button class="btn" id="checkBtn">추가</button></div></div>
+        <div class="logrow" style="margin-top:6px"><textarea rows="1" class="ml" id="checkInput" placeholder="＋ 할 일 추가 (Enter 저장 · Shift+Enter 줄바꿈)"></textarea><button class="btn" id="checkBtn">추가</button></div></div>
       <div class="field"><label>기록 추가 <span style="color:var(--faint);font-weight:400">(진행 기록은 오늘 날짜가 자동으로 붙어요)</span></label>
         <div class="logrow"><select id="noteSection" style="flex:none">${noteSectionNames(t.body).map(n => `<option ${n === lastNoteSection ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
-          <input type="text" id="logInput" placeholder="예: 현장 테스트 OK, 김영준 대리 회신 대기"><button class="btn" id="logBtn">추가</button></div></div>
+          <textarea rows="1" class="ml" id="logInput" placeholder="예: 현장 테스트 OK, 김영준 대리 회신 대기 (Enter 저장 · Shift+Enter 줄바꿈)"></textarea><button class="btn" id="logBtn">추가</button></div></div>
       <div class="note">${renderNote(t)}</div>
     </div>
     <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
 }
+/* 줄바꿈은 노트에 <br>로 저장해 글머리 한 줄을 유지한다 (옵시디언에서도 줄이 바뀌어 보인다) */
+function fromStore(s) { return String(s || "").replace(/<br\s*\/?>/gi, "\n"); }
+function autoGrow(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 220) + "px"; }
+document.addEventListener("input", e => { if (e.target.classList && e.target.classList.contains("ml")) autoGrow(e.target); });
 let editingCheck = null, editingNote = null, editingTitle = false, lastNoteSection = "진행 기록";
 function shortTitle(t) { const p = t.project + " - "; return t.title.startsWith(p) ? t.title.slice(p.length) : t.title; }
 
@@ -857,11 +865,11 @@ function noteSectionNames(body) {
 }
 function renderNote(t) {
   return parseNote(t.body).map(s => `<h4>${esc(s.name)}</h4>` + s.items.map(it => {
-    if (!it.bullet) return `<p>${esc(it.text)}</p>`;
+    if (!it.bullet) return `<p>${esc(fromStore(it.text))}</p>`;
     const ref = `data-nsec="${esc(encodeURIComponent(s.name))}" data-nidx="${it.idx}"`;
     if (editingNote && editingNote.sec === s.name && editingNote.idx === it.idx)
-      return `<div class="check editing"><input type="text" id="noteEdit" ${ref} value="${esc(it.text)}"><button class="mini" data-nsave>저장</button><button class="mini" data-ncancel>취소</button></div>`;
-    return `<div class="check nline" style="margin-left:${it.indent * 6}px"><span class="ntext">${esc(it.text)}</span>
+      return `<div class="check editing"><textarea rows="1" class="ml" id="noteEdit" ${ref}>${esc(fromStore(it.text))}</textarea><button class="mini" data-nsave>저장</button><button class="mini" data-ncancel>취소</button></div>`;
+    return `<div class="check nline" style="margin-left:${it.indent * 6}px"><span class="ntext">${esc(fromStore(it.text))}</span>
       <button class="mini icon" data-nedit ${ref} title="고치기">✎</button><button class="mini icon del" data-ndel ${ref} title="지우기">✕</button></div>`;
   }).join("")).join("");
 }
@@ -885,13 +893,14 @@ async function saveNoteEdit() {
 function redrawDrawer(t) {
   const dr = $("#drawer"), act = document.activeElement;
   const vals = {};
-  dr.querySelectorAll("input[type=text]").forEach(i => { if (i.id) vals[i.id] = i.value; });
+  dr.querySelectorAll("input[type=text], textarea").forEach(i => { if (i.id) vals[i.id] = i.value; });
   const focusId = act && dr.contains(act) ? act.id : null;
   const sel = focusId && act.selectionStart != null ? [act.selectionStart, act.selectionEnd] : null;
   const scroll = $(".d-body", dr)?.scrollTop || 0;
   renderDrawer(t);
   for (const [id, v] of Object.entries(vals)) { const i = document.getElementById(id); if (i) i.value = v; }
   const body = $(".d-body", dr); if (body) body.scrollTop = scroll;
+  dr.querySelectorAll("textarea.ml").forEach(autoGrow);
   if (focusId) { const f = document.getElementById(focusId); if (f) { f.focus(); if (sel && f.setSelectionRange) try { f.setSelectionRange(...sel); } catch (e) {} } }
 }
 function openDrawer(id) {
@@ -1595,10 +1604,11 @@ document.addEventListener("keydown", e => {
   // 새 업무 팝업은 쓰던 내용이 사라지지 않도록 취소·만들기 버튼으로만 닫는다
   if (e.key === "Escape" && $("#newModal").classList.contains("on")) return;
   if (e.key === "Escape") { document.querySelectorAll(".modal.on").forEach(m => m.classList.remove("on")); closeDrawer(); }
-  if (e.key === "Enter" && e.target.id === "logInput") addLog();
-  if (e.key === "Enter" && e.target.id === "checkInput") addCheck();
-  if (e.key === "Enter" && e.target.id === "checkEdit") saveCheckEdit();
-  if (e.key === "Enter" && e.target.id === "noteEdit") saveNoteEdit();
+  if (e.key === "Enter" && !e.shiftKey && e.target.classList && e.target.classList.contains("ml")) e.preventDefault();  // Shift+Enter만 줄바꿈
+  if (e.key === "Enter" && !e.shiftKey && e.target.id === "logInput") addLog();
+  if (e.key === "Enter" && !e.shiftKey && e.target.id === "checkInput") addCheck();
+  if (e.key === "Enter" && !e.shiftKey && e.target.id === "checkEdit") saveCheckEdit();
+  if (e.key === "Enter" && !e.shiftKey && e.target.id === "noteEdit") saveNoteEdit();
   if (e.key === "Enter" && e.target.id === "titleEdit") saveTitle();
   if (e.key === "Escape" && e.target.id === "titleEdit") { editingTitle = false; const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); }
 });
@@ -1821,7 +1831,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-13.3";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-13.4";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();

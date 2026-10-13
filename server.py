@@ -322,6 +322,11 @@ def rename_task(task_id, new_title):
     return dest.name
 
 
+def _oneline(s):
+    """여러 줄 입력은 글머리 한 줄을 유지하도록 <br>로 잇는다."""
+    return re.sub(r"[ \t]*\r?\n[ \t]*", "<br>", (s or "").strip())
+
+
 def update_task(data):
     if data.get("new_title") is not None:
         data = dict(data)
@@ -368,23 +373,23 @@ def update_task(data):
             new = (data.get("text") or "").strip()
             if not new:
                 raise ValueError("내용을 입력해 주세요")
-            text = edit_check_line(text, int(data["edit_check"]), new)
+            text = edit_check_line(text, int(data["edit_check"]), _oneline(new))
         if data.get("add_check"):
-            text = add_check_line(text, data["add_check"].strip())
+            text = add_check_line(text, _oneline(data["add_check"]))
         if data.get("log"):
-            text = append_log(text, data["log"].strip())
+            text = append_log(text, _oneline(data["log"]))
         if data.get("add_note"):
             n = data["add_note"]
             sec, txt = (n.get("section") or "진행 기록").strip(), (n.get("text") or "").strip()
             if not txt:
                 raise ValueError("내용을 입력해 주세요")
-            text = append_log(text, txt, sec, dated=(sec == "진행 기록"))
+            text = append_log(text, _oneline(txt), sec, dated=(sec == "진행 기록"))
         if data.get("edit_note"):
             n = data["edit_note"]
             txt = (n.get("text") or "").strip()
             if not txt:
                 raise ValueError("내용을 입력해 주세요")
-            text = edit_note_line(text, (n.get("section") or "").strip(), int(n["idx"]), txt)
+            text = edit_note_line(text, (n.get("section") or "").strip(), int(n["idx"]), _oneline(txt))
         if data.get("delete_note"):
             n = data["delete_note"]
             text = edit_note_line(text, (n.get("section") or "").strip(), int(n["idx"]), None)
