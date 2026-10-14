@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>업무보드</title>
+<title>콕핏</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales/ko.global.min.js"></script>
@@ -531,7 +531,7 @@ a.iss:hover { border-color: var(--accent); }
 </head>
 <body>
 <header>
-  <div class="brand"><span class="modeseg" id="modeSeg"></span><h1 id="brandTitle" role="button" tabindex="0" title="클릭하면 업무 → 성장 → 차트 화면이 차례로 바뀌어요">💼 업무보드</h1><span class="today" id="todayLabel"></span><button class="modeBtn hidden" id="modeBtn" type="button"></button></div>
+  <div class="brand"><span class="modeseg" id="modeSeg"></span><h1 id="brandTitle" role="button" tabindex="0" title="클릭하면 업무 → 성장 → 차트 화면이 차례로 바뀌어요">🧭 콕핏</h1><span class="today" id="todayLabel"></span><button class="modeBtn hidden" id="modeBtn" type="button"></button></div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
   <div class="searchbox"><input type="search" id="searchBox" placeholder="🔍 검색  ( / )" title="프로젝트·제목·할 일·기록에서 찾기 ( / 키 · Esc로 지우기 )" autocomplete="off"><span class="sc" id="searchCount"></span></div>
@@ -899,7 +899,7 @@ function cardHTML(t) {
   </div>`;
 }
 
-/* ---- 🔔 알림 팝업: Windows 알림 대신 업무보드 화면 가운데에 크게 띄운다 ---- */
+/* ---- 🔔 알림 팝업: Windows 알림 대신 콕핏 화면 가운데에 크게 띄운다 ---- */
 let alertQueue = [], alertCur = null, alertSnooze = {};
 const ALERT_ICON = { morning: "☀", evening: "🌆", friday: "🔁", review_week: "📝", review_month: "🗓", urgent: "🔥" };
 window.WB_ALERT = a => {  // 웹(서버 없는) 모드의 알림도 같은 팝업을 쓴다
@@ -974,7 +974,7 @@ function urgentItems() {
 }
 function renderUrgent() {
   const items = urgentItems(), el = $("#urgentBar");
-  document.title = (items.length ? `🔥${items.length} ` : "") + "업무보드";
+  document.title = (items.length ? `🔥${items.length} ` : "") + "콕핏";
   if (alertCur && alertCur.kind === "urgent") drawAlert();
   if (!items.length) { el.innerHTML = ""; el.className = ""; return; }
   const LIMIT = 3, shown = urgOpen ? items : items.slice(0, LIMIT);
@@ -1408,7 +1408,7 @@ function syncModeUI() {
   document.body.dataset.mode = mode;
   const unsupported = !!growth.unsupported;
   const title = $("#brandTitle"), seg = $("#modeSeg"), tab = document.querySelector('.tabs button[data-view="growth"]');
-  if (title) title.textContent = mode === "growth" ? "🌱 성장보드" : mode === "chart" ? "📈 차트보드" : "💼 업무보드";
+  if (title) title.textContent = "🧭 콕핏";  // 앱 이름은 고정, 어느 보드인지는 옆의 업무·성장·차트 선택 버튼이 보여 준다
   if (seg) {
     seg.innerHTML = [["work", "💼 업무"], ["growth", "🌱 성장" + (growthDot ? " •" : "")], ["chart", "📈 차트"]]
       .filter(([m]) => !(m === "growth" && unsupported))
@@ -1438,7 +1438,7 @@ function renderGrowth() {
   const pending = growth.goals.filter(g => g.status === "달성" && !g.reward_claimed && g.reward).length;
   growthDot = !!((due.weekDue && !due.hasWeek) || (due.monthDue && !due.hasMonth) || pending);
   syncModeUI();
-  if (growth.unsupported) { el.innerHTML = `<div class="g-card"><h3>🌱 성장</h3><div class="empty">서버 버전(내 PC의 업무보드)에서만 쓸 수 있어요.</div></div>`; return; }
+  if (growth.unsupported) { el.innerHTML = `<div class="g-card"><h3>🌱 성장</h3><div class="empty">서버 버전(내 PC의 콕핏)에서만 쓸 수 있어요.</div></div>`; return; }
 
   const c = cheerData();
   const activeGoals = growth.goals.filter(g => g.status !== "달성");
@@ -1649,7 +1649,7 @@ function routineStats(ym) {
 function renderRoutine() {
   const el = $("#routine");
   if (!el) return;
-  if (routines.unsupported) { el.innerHTML = `<div class="g-card"><h3>🔁 루틴</h3><div class="empty">서버 버전(내 PC의 업무보드)에서만 쓸 수 있어요.</div></div>`; return; }
+  if (routines.unsupported) { el.innerHTML = `<div class="g-card"><h3>🔁 루틴</h3><div class="empty">서버 버전(내 PC의 콕핏)에서만 쓸 수 있어요.</div></div>`; return; }
   if (!routineMonth) routineMonth = today.slice(0, 7);
   const ym = routineMonth, year = Number(ym.slice(0, 4)), mo = Number(ym.slice(5, 7));
   const list = routines.routines, isCur = ym === today.slice(0, 7);
@@ -2418,7 +2418,7 @@ function afterBoot() {
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();
-    // 지난번에 쓰던 저장 위치를 보여 주고, 확인 버튼을 누르면 업무보드를 연다
+    // 지난번에 쓰던 저장 위치를 보여 주고, 확인 버튼을 누르면 콕핏을 연다
     // (폴더 권한·구글 로그인은 클릭 직후에만 요청할 수 있어서 확인 버튼이 그 역할도 한다)
     const last = (() => { try { return localStorage.getItem("wb.backend"); } catch (e) { return null; } })();
     let folder = null, where = "";

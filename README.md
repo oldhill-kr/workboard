@@ -1,4 +1,4 @@
-# 업무보드
+# 콕핏 (구 업무보드)
 
 **바로 쓰기:** https://oldhill-kr.github.io/workboard/ (Chrome·Edge 권장)
 

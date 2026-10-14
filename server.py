@@ -1,4 +1,4 @@
-"""업무보드: Obsidian Work/업무 노트 + 구글 캘린더(iCal)를 달력·카드로 보여주는 로컬 웹 서버.
+"""콕핏(구 업무보드): Obsidian Work/업무 노트 + 구글 캘린더(iCal)를 달력·카드로 보여주는 로컬 웹 서버.
 
 실행: python server.py  →  http://127.0.0.1:8765
 데이터는 Obsidian 노트가 원본이다. 이 서버는 노트를 읽고, 상태·마감·체크리스트·진행 기록만 고쳐 쓴다.
@@ -1174,7 +1174,7 @@ def show_toast(title, lines):
     texts = "".join(f"<text>{escape(t)}</text>" for t in [title] + [l for l in lines if l][:2])
     xml = (f'<toast activationType="protocol" launch="{escape(url)}" scenario="reminder">'
            f'<visual><binding template="ToastGeneric">{texts}</binding></visual>'
-           f'<actions><action content="업무보드 열기" activationType="protocol" arguments="{escape(url)}"/>'
+           f'<actions><action content="콕핏 열기" activationType="protocol" arguments="{escape(url)}"/>'
            f'<action content="닫기" activationType="system" arguments="dismiss"/></actions></toast>')
     import base64
     import os
@@ -1887,7 +1887,7 @@ def main():
         webbrowser.open(f"http://127.0.0.1:{port}")
         return
     threading.Thread(target=alarm_loop, daemon=True).start()
-    print(f"업무보드 실행 중: http://127.0.0.1:{port}  (끄려면 이 창을 닫으세요)")
+    print(f"콕핏 실행 중: http://127.0.0.1:{port}  (끄려면 이 창을 닫으세요)")
     if "--no-browser" not in __import__("sys").argv:
         threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     srv.serve_forever()
