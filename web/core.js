@@ -150,7 +150,9 @@
     if (A && A.obsidian && settings.vault)
       obsidian = `obsidian://open?vault=${encodeURIComponent(settings.vault)}&file=${encodeURIComponent((A.folderName || "Work") + "/" + TASK_DIR + "/" + stem)}`;
     return {
-      id: name, title, project: fm.project || "기타", status: fm.status || "할일", priority: fm.priority || "보통",
+      id: name, title, project: fm.project || "기타", status: fm.status || "할일",
+      priority: fm.priority || (fm.board === "차트" ? "한국" : "보통"), board: fm.board || "업무", symbol: String(fm.symbol || ""),
+      themes: (() => { const p = fm.project || "기타", th = (Array.isArray(fm.themes) ? fm.themes : []).map(String).filter(Boolean); return th[0] === p ? th : [p, ...th.filter(x => x !== p)]; })(),
       due: fm.due || null, created: fm.created || null, completed: fm.completed || null,
       archived: String(fm.archived || "").toLowerCase() === "true", recurring: fm.recurring || "",
       people: Array.isArray(people) ? people : [people], checks, body, mtime, obsidian,
@@ -171,14 +173,14 @@
     }
     for (const k of [...cache.keys()]) if (k.startsWith(TASK_DIR + "/") && !seen.has(k)) cache.delete(k);
   }
-  async function listTasks(includeArchived = false) {
+  async function listTasks(includeArchived = false, charts = false) {  // 차트보드 카드(board: 차트)는 charts일 때만
     await syncNotes();
     const out = [];
     for (const [path, c] of [...cache.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
       if (!path.startsWith(TASK_DIR + "/")) continue;
       try {
         const t = taskFromNote(path.slice(TASK_DIR.length + 1), c.text, c.mtime);
-        if (t && (includeArchived || !t.archived)) out.push(t);
+        if (t && (includeArchived || !t.archived) && (charts || t.board !== "차트")) out.push(t);
       } catch (e) { console.warn("노트 읽기 실패", path, e); }
     }
     return out;
@@ -234,6 +236,7 @@
       text = setFrontmatter(text, "due", due);
     }
     if ("priority" in data) text = setFrontmatter(text, "priority", data.priority);
+    if ("set_view" in data) text = setSectionBullets(text, "관점", [String(data.set_view || "").trim()].filter(Boolean));  // 차트보드 관점 메모
     if ("toggle_check" in data) {
       const idx = Number(data.toggle_check);
       let n = -1;
@@ -267,12 +270,26 @@
     return { task: taskFromNote(data.id, text, cache.get(path).mtime) };
   }
 
+  function setSectionBullets(text, section, items) {
+    const nl = text.includes("\r\n") ? "\r\n" : "\n";
+    const lines = text.split(nl);
+    const neu = items.map(i => `- ${oneline(i)}`);
+    const start = lines.findIndex(l => l.trim() === `## ${section}`);
+    if (start < 0) return neu.length ? text.replace(/\s+$/, "") + nl + nl + `## ${section}` + nl + neu.join(nl) + nl : text;
+    let end = lines.findIndex((l, i) => i > start && l.startsWith("## "));
+    if (end < 0) end = lines.length;
+    lines.splice(start + 1, end - start - 1, ...neu, ...(end < lines.length ? [""] : []));
+    return lines.join(nl);
+  }
+
   async function createTask(data) {
     const title = (data.title || "").trim();
     if (!title) fail("업무 이름이 필요해요");
-    const project = (data.project || "기타").trim();
+    const chart = data.board === "차트";
+    const themes = chart ? String(data.project || "").split(/[,，/·]/).map(x => x.trim().replace(/[\\/:*?"<>|#^\[\]]/g, " ").trim()).filter((x, i, a) => x && a.indexOf(x) === i) : [];
+    const project = (themes[0] || (data.project || (chart ? "미분류" : "기타"))).trim();
     await syncNotes();
-    if ((await archivedProjects()).has(project)) await setArchived(project, false); // 보관된 프로젝트에 추가하면 다시 꺼낸다
+    if (!chart && (await archivedProjects()).has(project)) await setArchived(project, false); // 보관된 프로젝트에 추가하면 다시 꺼낸다
     const name = `${project} - ${title}`.replace(/[\\/:*?"<>|#^\[\]]/g, " ").trim();
     let fname = `${name}.md`, i = 2;
     while (cache.has(`${TASK_DIR}/${fname}`)) fname = `${name} (${i++}).md`;
@@ -284,11 +301,11 @@
 type: 업무
 project: ${project}
 status: ${data.status || "할일"}
-priority: ${data.priority || "보통"}
+priority: ${data.priority || (chart ? "한국" : "보통")}
 due: ${data.due || ""}
 created: ${today}
-people: []
-${rec ? `recurring: ${rec}\n` : ""}tags: [work, 업무]
+${chart ? "board: 차트\n" + (themes.length > 1 ? `themes: [${themes.join(", ")}]\n` : "") : ""}${chart && data.symbol ? `symbol: ${String(data.symbol).replace(/[^0-9A-Za-z.\-]/g, "")}\n` : ""}people: []
+${rec ? `recurring: ${rec}\n` : ""}tags: ${chart ? "[work, 차트]" : "[work, 업무]"}
 ---
 
 # ${stem}
@@ -297,7 +314,7 @@ ${rec ? `recurring: ${rec}\n` : ""}tags: [work, 업무]
 ${checkLines}
 
 ## 진행 기록
-- ${today}: 등록 (${rec ? "정기 업무" : "업무보드"})
+- ${today}: 등록 (${rec ? "정기 업무" : chart ? "차트보드" : "업무보드"})
 `;
     await putNote(`${TASK_DIR}/${fname}`, text);
     return { task: taskFromNote(fname, text, cache.get(`${TASK_DIR}/${fname}`).mtime) };
@@ -372,7 +389,7 @@ ${checkLines}
     try { return JSON.parse(t); } catch (e) { return null; }
   }
   async function projectColors() {
-    const names = new Set((await listTasks(true)).map(t => t.project));
+    const names = new Set((await listTasks(true, true)).map(t => t.project));
     const saved = (await loadColors()) || {};
     const colors = {};
     for (const [k, v] of Object.entries(saved)) if (names.has(k)) colors[k] = v;
@@ -953,7 +970,7 @@ tags: [work, 목표]
       if (p === "/api/tasks") {
         try { await ensureRecurring(); } catch (e) { console.warn("정기 업무 생성 실패", e); }  // 이번 주기의 정기 업무가 없으면 만든다
       }
-      if (p === "/api/tasks") return { tasks: await listTasks(), archived: await archivedSummary(), colors: await projectColors(), today: todayISO() };
+      if (p === "/api/tasks") return { tasks: await listTasks(false, true), archived: await archivedSummary(), colors: await projectColors(), today: todayISO() };
       if (p === "/api/events") {
         if (!CAL) return { events: [], errors: [] };
         try { return await CAL.fetch(q.get("start") || todayISO(), q.get("end") || addDaysISO(todayISO(), 42)); }

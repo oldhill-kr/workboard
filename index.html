@@ -55,6 +55,29 @@ body[data-mode="growth"] .brand h1 { color: var(--green); }
 .modeBtn { border: 1px solid var(--line); background: var(--panel-2); color: var(--sub); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .modeBtn:hover { color: var(--text); border-color: var(--sub); }
 body[data-mode="work"] .tabs button[data-view="growth"] { display: none; }
+/* 모드 전환: 💼 업무 | 🌱 성장 | 📈 차트 */
+.modeseg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--panel-2); }
+.modeseg button { border: 0; background: transparent; color: var(--sub); padding: 2px 10px; font-size: 12px; font-weight: 600; }
+.modeseg button:hover { color: var(--text); }
+.modeseg button.on { background: var(--accent-soft); color: var(--accent); }
+body[data-mode="growth"] .modeseg button.on { background: var(--green-soft); color: var(--green); }
+body[data-mode="chart"] .brand h1 { color: var(--red); }
+/* 📈 차트보드: 시장(한국/미국)이 우선순위 자리, 달력·루틴·정기업무·보관은 없다 */
+.pchip.pri-한국 .pmark { background: var(--red); } .pchip.pri-미국 .pmark { background: var(--accent); }
+body[data-mode="chart"] .tabs,
+body[data-mode="chart"] .filter-tools, body[data-mode="chart"] .filters .toggle, body[data-mode="chart"] .archbtn,
+body[data-mode="chart"] .psum [data-rename-proj], body[data-mode="chart"] .psum [data-archive-proj],
+body[data-mode="chart"] .work-only { display: none !important; }
+.chart-only { display: none; }
+body[data-mode="chart"] .chart-only { display: block; }
+.mk { margin-left: auto; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--sub); }
+.mk.한국 { color: var(--red); border-color: var(--red); } .mk.미국 { color: var(--accent); border-color: var(--accent); }
+.card .sym { color: var(--faint); font-size: 11px; margin-left: 6px; font-weight: 400; }
+.card .cview { margin-top: 6px; font-size: 12px; color: var(--sub); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .cview.none { color: var(--faint); }
+.ccheck { border: 1px solid var(--line); background: var(--panel); color: var(--faint); border-radius: 6px; width: 22px; height: 22px; line-height: 1; font-size: 13px; padding: 0; }
+.ccheck.on { background: var(--green-soft); color: var(--green); border-color: var(--green); }
+.cview-box { width: 100%; min-height: 96px; resize: vertical; }
 .modeBtn.hidden { display: none; }
 .stats { display: flex; gap: 8px; flex-wrap: wrap; }
 .stat { display: flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; color: var(--sub); }
@@ -508,7 +531,7 @@ a.iss:hover { border-color: var(--accent); }
 </head>
 <body>
 <header>
-  <div class="brand"><h1 id="brandTitle" role="button" tabindex="0" title="클릭하면 업무 화면 ↔ 성장 화면이 바뀌어요">💼 업무보드</h1><span class="today" id="todayLabel"></span><button class="modeBtn" id="modeBtn" type="button" title="업무 화면 ↔ 성장 화면 전환"></button></div>
+  <div class="brand"><h1 id="brandTitle" role="button" tabindex="0" title="클릭하면 업무 → 성장 → 차트 화면이 차례로 바뀌어요">💼 업무보드</h1><span class="today" id="todayLabel"></span><span class="modeseg" id="modeSeg"></span><button class="modeBtn hidden" id="modeBtn" type="button"></button></div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
   <div class="searchbox"><input type="search" id="searchBox" placeholder="🔍 검색  ( / )" title="프로젝트·제목·할 일·기록에서 찾기 ( / 키 · Esc로 지우기 )" autocomplete="off"><span class="sc" id="searchCount"></span></div>
@@ -555,15 +578,16 @@ a.iss:hover { border-color: var(--accent); }
 
 <div class="modal" id="newModal">
   <form class="modal-box" id="newForm">
-    <h2>새 업무</h2>
-    <div class="field"><label>업무 이름</label><input type="text" name="title" required placeholder="예: 전장반 USB 케이블 교체"></div>
-    <div class="field"><label>프로젝트</label><input type="text" name="project" list="projList" placeholder="예: KC"><datalist id="projList"></datalist></div>
-    <div class="field"><label>마감일</label>
+    <h2 id="newTitle">새 업무</h2>
+    <div class="field"><label id="lblTitle">업무 이름</label><input type="text" name="title" required placeholder="예: 전장반 USB 케이블 교체"></div>
+    <div class="field"><label id="lblProject">프로젝트</label><input type="text" name="project" list="projList" placeholder="예: KC"><datalist id="projList"></datalist></div>
+    <div class="field chart-only"><label>종목 코드 <span style="color:var(--faint);font-weight:400">(척후 보고와 같은 코드면 한 카드로 이어져요)</span></label><input type="text" name="symbol" placeholder="예: 005380 · NVDA"></div>
+    <div class="field work-only"><label>마감일</label>
       <div class="row"><input type="date" name="due" id="newDue">
         <button type="button" class="quick" data-q="0">오늘</button><button type="button" class="quick" data-q="1">내일</button>
         <button type="button" class="quick" data-q="fri">이번 주 금</button><button type="button" class="quick" data-q="mon">다음 주 월</button></div></div>
-    <div class="field"><label>우선순위</label><select name="priority"><option>높음</option><option selected>보통</option><option>낮음</option></select></div>
-    <div class="field"><label>할 일 체크리스트 (한 줄에 하나, 선택)</label><textarea name="checks" rows="7" placeholder="한 줄에 업무 하나씩 입력하세요. 내용이 길어도 한 줄로 계속 쓰면 됩니다 (줄바꿈하면 다른 항목이 돼요)"></textarea></div>
+    <div class="field"><label id="lblPriority">우선순위</label><select name="priority"><option>높음</option><option selected>보통</option><option>낮음</option></select></div>
+    <div class="field work-only"><label>할 일 체크리스트 (한 줄에 하나, 선택)</label><textarea name="checks" rows="7" placeholder="한 줄에 업무 하나씩 입력하세요. 내용이 길어도 한 줄로 계속 쓰면 됩니다 (줄바꿈하면 다른 항목이 돼요)"></textarea></div>
     <div class="actions"><button type="button" class="btn" data-close>취소</button><button class="btn primary">만들기</button></div>
   </form>
 </div>
@@ -724,8 +748,10 @@ let projectFilter = new Set(), priorityFilter = new Set(), showDone = false, ics
 const PRIORITIES = ["높음", "보통", "낮음"];
 let view = "board";
 let mode = "work";  // "work": 업무 프로젝트 · "growth": 개인(자기개발) 프로젝트 — 같은 카드/달력을 범위만 바꿔 보여 준다
-try { view = localStorage.getItem("wb.view") || "board"; showDone = localStorage.getItem("wb.done") === "1"; mode = localStorage.getItem("wb.mode") === "growth" ? "growth" : "work"; } catch (e) {}
-if (mode === "work" && view === "growth") view = "board";
+try { view = localStorage.getItem("wb.view") || "board"; showDone = localStorage.getItem("wb.done") === "1"; mode = ["growth", "chart"].includes(localStorage.getItem("wb.mode")) ? localStorage.getItem("wb.mode") : "work"; } catch (e) {}
+if (/^#(chart|growth|work)$/.test(location.hash)) mode = location.hash.slice(1);  // 즐겨찾기용: 주소 끝에 #chart 를 붙이면 그 화면으로 열린다
+if (mode !== "growth" && (view === "growth" || view === "routine")) view = "board";
+if (mode === "chart") view = "board";
 
 function isoDate(d) { const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; }
 function addDays(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return isoDate(d); }
@@ -755,10 +781,18 @@ function ddayLabel(t) {
   if (n < 0) return { text: `D+${-n}`, cls: "late" };
   return { text: `D-${n}`, cls: n <= 2 ? "soon" : "" };
 }
-const inScope = t => (typeof isPersonal === "function") ? (mode === "growth") === isPersonal(t) : mode === "work";
+const isChartCard = t => t.board === "차트";
+const themesOf = t => (isChartCard(t) && t.themes && t.themes.length) ? t.themes : [t.project];  // 한 종목이 여러 테마에 걸칠 수 있다
+const inProjectFilter = t => projectFilter.size === 0 || themesOf(t).some(x => projectFilter.has(x));
+const prios = () => mode === "chart" ? ["한국", "미국"] : PRIORITIES;  // 차트보드는 우선순위 자리에 시장 구분
+const inScope = t => {
+  if (mode === "chart") return isChartCard(t);   // 차트보드: 종목 카드만
+  if (isChartCard(t)) return false;              // 업무·성장 화면에는 종목 카드를 섞지 않는다
+  return (typeof isPersonal === "function") ? (mode === "growth") === isPersonal(t) : mode === "work";
+};
 function visible(t) {
   if (!inScope(t)) return false;  // 업무 화면에는 업무 프로젝트만, 성장 화면에는 개인(자기개발) 프로젝트만
-  return (projectFilter.size === 0 || projectFilter.has(t.project)) && (priorityFilter.size === 0 || priorityFilter.has(t.priority)) && matchesSearch(t);
+  return inProjectFilter(t) && (priorityFilter.size === 0 || priorityFilter.has(t.priority)) && matchesSearch(t);
 }
 function toast(msg) { const el = $("#toast"); el.textContent = msg; el.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 1800); }
 
@@ -792,6 +826,13 @@ function renderAll() {
 }
 
 function renderStats() {
+  if (mode === "chart") {
+    const mine = tasks.filter(inScope), n = f => mine.filter(f).length;
+    $("#stats").innerHTML = `<span class="stat">확인 전 <b>${n(t => t.status === "할일")}</b></span>` +
+      `<span class="stat ${n(t => t.status === "완료") ? "green" : ""}">분석 완료 <b>${n(t => t.status === "완료")}</b></span>` +
+      `<span class="stat">🇰🇷 한국 <b>${n(t => t.priority === "한국")}</b></span><span class="stat">🇺🇸 미국 <b>${n(t => t.priority === "미국")}</b></span>`;
+    return;
+  }
   const open = tasks.filter(isOpen).filter(inScope);
   const late = open.filter(isLate).length;
   const dueToday = open.filter(t => t.due === today).length;
@@ -806,17 +847,18 @@ function renderStats() {
 
 function renderFilters() {
   const counts = {};
-  tasks.filter(t => (showAllDone() || isOpen(t)) && inScope(t) && matchesSearch(t)).forEach(t => counts[t.project] = (counts[t.project] || 0) + 1);
+  tasks.filter(t => (showAllDone() || isOpen(t)) && inScope(t) && matchesSearch(t)).forEach(t => themesOf(t).forEach(n => counts[n] = (counts[n] || 0) + 1));
   const names = Object.keys(counts).sort();
   const pcounts = {};  // 우선순위 칩의 개수는 선택한 프로젝트 안에서 센다
-  tasks.filter(t => (showAllDone() || isOpen(t)) && inScope(t) && matchesSearch(t) && (projectFilter.size === 0 || projectFilter.has(t.project))).forEach(t => pcounts[t.priority] = (pcounts[t.priority] || 0) + 1);
-  $("#filters").innerHTML = `<span class="label">프로젝트</span>` +
+  tasks.filter(t => (showAllDone() || isOpen(t)) && inScope(t) && matchesSearch(t) && inProjectFilter(t)).forEach(t => pcounts[t.priority] = (pcounts[t.priority] || 0) + 1);
+  const chartMode = mode === "chart";
+  $("#filters").innerHTML = `<span class="label">${chartMode ? "종목" : "프로젝트"}</span>` +
     `<button class="chip ${projectFilter.size ? "" : "on"}" data-p="">전체</button>` +
     names.map(p => `<button class="chip ${projectFilter.has(p) ? "on" : ""}" data-p="${esc(p)}"><span class="dot" style="background:${projColor(p)}"></span>${esc(p)} <span style="color:var(--faint)">${counts[p]}</span></button>`).join("") +
     (archived.length ? `<button class="archbtn" id="archBtn">📦 보관함 ${archived.length}</button>` : "") +
-    `<span class="filter-break"></span><span class="label">우선순위</span>` +
+    `<span class="filter-break"></span><span class="label">${chartMode ? "시장" : "우선순위"}</span>` +
     `<button class="pchip ${priorityFilter.size ? "" : "on"}" data-pri="">전체</button>` +
-    PRIORITIES.map(pr => `<button class="pchip pri-${pr} ${priorityFilter.has(pr) ? "on" : ""}" data-pri="${pr}"><span class="pmark"></span>${pr} <span style="color:var(--faint)">${pcounts[pr] || 0}</span></button>`).join("") +
+    prios().map(pr => `<button class="pchip pri-${pr} ${priorityFilter.has(pr) ? "on" : ""}" data-pri="${pr}"><span class="pmark"></span>${pr} <span style="color:var(--faint)">${pcounts[pr] || 0}</span></button>`).join("") +
     `<span class="filter-tools"><button class="archbtn" id="weeklyBtn" title="이번 주 완료·이월·대기·이슈를 모아 보고서로">📝 주간 보고</button>` +
     `<button class="archbtn" id="recurBtn" title="매주·매월 자동으로 만들어지는 업무">🔁 정기 업무${recurRules.length ? " " + recurRules.length : ""}</button></span>` +
     `<label class="toggle"><input type="checkbox" id="doneToggle" ${showDone ? "checked" : ""}> 완료·보류 보기</label>`;
@@ -829,7 +871,23 @@ const COLS = [
   { key: "nodue", title: "📌 마감 미정", hint: "" },
   { key: "wait", title: "❓ 확인·대기", hint: "회신·결과", cls: "wait" },
 ];
+/* 📈 차트보드 카드: 종목 · 시장 · 분석 체크 · 관점 메모 미리보기 */
+function chartMemo(t) {
+  const sec = parseNote(t.body).find(s => s.name === "관점");
+  return sec ? sec.items.map(i => fromStore(i.text)).join(" / ") : "";
+}
+function chartCardHTML(t) {
+  const pc = projColor(t.project), memo = chartMemo(t), done = t.status === "완료";
+  return `<div class="card" data-id="${esc(t.id)}" style="--pc:${pc}">
+    <div class="top"><span class="proj">${esc(themesOf(t).join(" · "))}</span><span class="mk ${esc(t.priority)}">${esc(t.priority)}</span></div>
+    <div class="title">${esc(shortTitle(t))}${t.symbol ? `<span class="sym">${esc(t.symbol)}</span>` : ""}</div>
+    <div class="meta"><button class="ccheck ${done ? "on" : ""}" data-chart-check="${esc(t.id)}" title="${done ? "차트 분석 완료 (누르면 해제)" : "차트 분석을 마쳤으면 체크"}">${done ? "✔" : ""}</button>
+      <span style="color:var(--sub);font-size:12px">${done ? "분석 완료" + (t.completed ? " · " + t.completed.slice(5).replace("-", "/") : "") : "차트 확인 전"}</span></div>
+    <div class="cview ${memo ? "" : "none"}">${memo ? esc(memo) : "관점 메모 없음"}</div>
+  </div>`;
+}
 function cardHTML(t) {
+  if (isChartCard(t)) return chartCardHTML(t);
   const dd = ddayLabel(t), done = t.checks.filter(c => c.done).length, total = t.checks.length;
   const pc = projColor(t.project);
   return `<div class="card ${t.status === "완료" ? "done" : ""}" data-id="${esc(t.id)}" style="--pc:${pc}">
@@ -934,9 +992,11 @@ function renderUrgent() {
 function overviewHTML() {
   const by = {};
   for (const t of tasks.filter(inScope)) {
-    if (projectFilter.size && !projectFilter.has(t.project)) continue;
-    const o = by[t.project] || (by[t.project] = { name: t.project, total: 0, done: 0, late: 0, doing: 0 });
-    o.total++; if (t.status === "완료") o.done++; if (isLate(t)) o.late++; if (t.status === "진행중") o.doing++;
+    if (!inProjectFilter(t)) continue;
+    for (const n of themesOf(t)) {
+      const o = by[n] || (by[n] = { name: n, total: 0, done: 0, late: 0, doing: 0 });
+      o.total++; if (t.status === "완료") o.done++; if (isLate(t)) o.late++; if (t.status === "진행중") o.doing++;
+    }
   }
   const list = Object.values(by).sort((a, b) => b.late - a.late || (b.total - b.done) - (a.total - a.done));
   if (list.length < 2) return "";
@@ -950,7 +1010,7 @@ function renderProjectSummary() {
   const el = $("#projSummary");
   if (projectFilter.size !== 1) { el.innerHTML = overviewHTML(); return; }
   const p = [...projectFilter][0];
-  const list = tasks.filter(t => t.project === p);
+  const list = tasks.filter(t => inScope(t) && themesOf(t).includes(p));
   if (!list.length) { el.innerHTML = ""; return; }
   const n = st => list.filter(t => t.status === st).length;
   const done = n("완료");
@@ -966,7 +1026,23 @@ function renderProjectSummary() {
         <div class="m"><span>${esc(t.status)}</span><span>${dd.text}${t.due ? " · " + t.due.slice(5).replace("-", "/") : ""}</span>${t.checks.length ? `<span>${c}/${t.checks.length}</span>` : ""}</div></div>`; }).join("")}</div>
   </div>`;
 }
+const CHART_COLS = [
+  { key: "할일", title: "👀 확인 전", hint: "척후 후보" },
+  { key: "진행중", title: "🔍 관찰 중", hint: "" },
+  { key: "대기", title: "⏳ 진입 대기", hint: "자리 오면", cls: "wait" },
+  { key: "완료", title: "✅ 분석 완료", hint: "차트 체크" },
+  { key: "보류", title: "🚫 제외", hint: "" },
+];
 function renderBoard() {
+  if (mode === "chart") {
+    $("#board").style.setProperty("--cols", CHART_COLS.length);
+    $("#board").innerHTML = CHART_COLS.map(c => {
+      const list = tasks.filter(visible).filter(t => t.status === c.key).sort((a, b) => b.mtime - a.mtime);
+      return `<div class="col ${c.cls || ""}"><div class="col-head"><h2>${c.title}</h2><span class="n">${list.length}</span><span class="hint">${c.hint}</span></div>
+        <div class="cards">${list.map(cardHTML).join("") || `<div class="empty">없음</div>`}</div></div>`;
+    }).join("");
+    return;
+  }
   const cols = showAllDone() ? [...COLS, { key: "done", title: "✅ 완료·보류", hint: "" }] : COLS;
   const order = (a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.priority === "높음" ? -1 : 0) - (b.priority === "높음" ? -1 : 0);
   $("#board").style.setProperty("--cols", cols.length);
@@ -1074,7 +1150,7 @@ function renderBody(md) {
   return out.join("");
 }
 function renderDrawer(t) {
-  const pc = projColor(t.project);
+  const pc = projColor(t.project), chart = isChartCard(t);
   $("#drawer").innerHTML = `
     <div class="d-head"><span class="proj" style="color:${pc}">● ${esc(t.project)}</span>
       ${editingTitle ? `<div class="logrow" style="margin-top:6px"><input type="text" id="titleEdit" value="${esc(shortTitle(t))}" style="font-size:16px;font-weight:700"><button class="mini" data-tsave>저장</button><button class="mini" data-tcancel>취소</button></div>`
@@ -1083,14 +1159,21 @@ function renderDrawer(t) {
       ${issuesFor(t).length ? `<button class="mini" data-iss-jump style="margin-top:6px">🐞 관련 이슈 ${issuesFor(t).length}건 보기</button>` : ""}
       <button class="d-close" data-close aria-label="닫기">×</button></div>
     <div class="d-body">
-      <div class="field"><label>프로젝트 <span style="color:var(--faint);font-weight:400">(고르면 그 프로젝트로 옮겨져요)</span></label>
+      ${chart ? `<div class="field"><label>차트 분석 ${t.symbol ? `<span style="color:var(--faint);font-weight:400">· ${esc(t.symbol)}</span>` : ""}</label>
+        <button class="btn ${t.status === "완료" ? "primary" : ""}" id="chartCheckBtn" type="button">${t.status === "완료" ? "✔ 차트 분석 완료 (누르면 해제)" : "☐ 차트 분석을 마쳤어요"}</button></div>
+      <div class="field"><label>관점 메모 <span style="color:var(--faint);font-weight:400">(내가 본 차트의 관점·진입 조건·무효 조건)</span></label>
+        <textarea class="cview-box" id="chartView" placeholder="예: 박스권 상단 돌파 후 눌림 대기. 종가 기준 ○○ 이탈하면 관점 무효.">${esc(chartMemo(t).replace(/ \/ /g, "\n"))}</textarea>
+        <div style="margin-top:6px"><button class="btn primary" id="chartViewSave" type="button">관점 저장</button></div></div>` : ""}
+      ${chart ? `<div class="field"><label>종목 테마 <span style="color:var(--faint);font-weight:400">(쉼표로 여러 개 · 첫 번째가 대표. 예: 로봇, 자동차)</span></label>
+        <div class="logrow"><input type="text" id="chartThemes" list="projList" value="${esc(themesOf(t).filter(x => x !== "미분류").join(", "))}"><button class="btn" id="chartThemesSave" type="button">저장</button></div></div>` : ""}
+      <div class="field ${chart ? "work-only" : ""}"><label>${chart ? "종목 테마" : "프로젝트"} <span style="color:var(--faint);font-weight:400">(고르면 그 ${chart ? "테마" : "프로젝트"}로 옮겨져요)</span></label>
         <select id="projSelect" style="width:100%">${[...new Set([...tasks.map(x => x.project), t.project])].sort().map(n =>
-          `<option value="${esc(n)}" ${n === t.project ? "selected" : ""}>${esc(n)}</option>`).join("")}<option value="__new__">＋ 새 프로젝트 만들기…</option></select></div>
+          `<option value="${esc(n)}" ${n === t.project ? "selected" : ""}>${esc(n)}</option>`).join("")}<option value="__new__">＋ 새 ${chart ? "테마" : "프로젝트"} 만들기…</option></select></div>
       <div class="field"><label>상태 ${t.status === "대기" ? `<span class="wait-days ${waitDays(t) >= 7 ? "long" : ""}" style="margin-left:6px">⏳ ${waitDays(t)}일째 대기 (${esc(waitSince(t).slice(5).replace("-", "/"))}부터)</span>` : ""}${t.recurring ? `<span class="rec-badge" style="margin-left:6px" title="정기 업무 규칙으로 자동 생성됨">🔁 정기 업무</span>` : ""}</label><div class="seg" id="segStatus">${STATUSES.map(s => `<button data-s="${s}" class="${t.status === s ? "on" : ""}">${s}</button>`).join("")}</div></div>
-      <div class="field"><label>마감일 ${t.due ? `<span class="dday ${ddayLabel(t).cls}" style="margin-left:6px">${ddayLabel(t).text}</span>` : ""}</label>
+      <div class="field ${chart ? "work-only" : ""}"><label>마감일 ${t.due ? `<span class="dday ${ddayLabel(t).cls}" style="margin-left:6px">${ddayLabel(t).text}</span>` : ""}</label>
         <div class="row"><input type="date" id="dueInput" value="${esc(t.due || "")}">
           <button class="quick" data-q="0">오늘</button><button class="quick" data-q="1">내일</button><button class="quick" data-q="fri">이번 주 금</button><button class="quick" data-q="mon">다음 주 월</button><button class="quick" data-q="clear">지우기</button></div></div>
-      <div class="field"><label>우선순위</label><div class="seg" id="segPri">${["높음", "보통", "낮음"].map(p => `<button data-p="${p}" class="${t.priority === p ? "on" : ""}">${p}</button>`).join("")}</div></div>
+      <div class="field"><label>${chart ? "시장" : "우선순위"}</label><div class="seg" id="segPri">${(chart ? ["한국", "미국"] : ["높음", "보통", "낮음"]).map(p => `<button data-p="${p}" class="${t.priority === p ? "on" : ""}">${p}</button>`).join("")}</div></div>
       <div class="field"><label>할 일 ${t.checks.length ? `${t.checks.filter(c => c.done).length}/${t.checks.length}` : ""}</label>
         <div class="checks">${t.checks.map((c, i) => editingCheck === i
           ? `<div class="check editing"><textarea rows="1" class="ml" id="checkEdit" data-ei="${i}">${esc(fromStore(c.text))}</textarea><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
@@ -1103,7 +1186,7 @@ function renderDrawer(t) {
       ${issuesHTML(t)}
       <div class="note">${renderNote(t)}</div>
     </div>
-    <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
+    <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">${chart ? "종목 삭제" : "업무 삭제"}</button></div>`;
 }
 /* 줄바꿈은 노트에 <br>로 저장해 글머리 한 줄을 유지한다 (옵시디언에서도 줄이 바뀌어 보인다) */
 function fromStore(s) { return String(s || "").replace(/<br\s*\/?>/gi, "\n"); }
@@ -1324,12 +1407,14 @@ let growthDot = false;
 function syncModeUI() {
   document.body.dataset.mode = mode;
   const unsupported = !!growth.unsupported;
-  const title = $("#brandTitle"), btn = $("#modeBtn"), tab = document.querySelector('.tabs button[data-view="growth"]');
-  if (title) title.textContent = mode === "growth" ? "🌱 성장보드" : "💼 업무보드";
-  if (btn) {
-    btn.classList.toggle("hidden", unsupported);
-    btn.textContent = (mode === "growth" ? "💼 업무로" : "🌱 성장으로") + (growthDot ? " •" : "");
+  const title = $("#brandTitle"), seg = $("#modeSeg"), tab = document.querySelector('.tabs button[data-view="growth"]');
+  if (title) title.textContent = mode === "growth" ? "🌱 성장보드" : mode === "chart" ? "📈 차트보드" : "💼 업무보드";
+  if (seg) {
+    seg.innerHTML = [["work", "💼 업무"], ["growth", "🌱 성장" + (growthDot ? " •" : "")], ["chart", "📈 차트"]]
+      .filter(([m]) => !(m === "growth" && unsupported))
+      .map(([m, label]) => `<button type="button" data-mode="${m}" class="${mode === m ? "on" : ""}">${label}</button>`).join("");
   }
+  const nb = $("#newBtn"); if (nb) nb.textContent = mode === "chart" ? "＋ 새 종목" : "＋ 새 업무";
   if (tab) tab.textContent = "🌱 회고·목표" + (growthDot ? " •" : "");
 }
 function setMode(m) {
@@ -1340,10 +1425,12 @@ function setMode(m) {
   projectFilter.clear();  // 다른 범위의 프로젝트 필터가 남아 빈 화면이 되지 않게
   if (m === "work" && (view === "growth" || view === "routine")) setView("board");
   if (m === "growth" && !routines.unsupported) setView("routine");
+  if (m === "chart") setView("board");
   syncModeUI();
   renderAll();
 }
-const toggleMode = () => setMode(mode === "growth" ? "work" : "growth");
+const toggleMode = () => setMode(mode === "work" ? (growth.unsupported ? "chart" : "growth") : mode === "growth" ? "chart" : "work");
+document.addEventListener("click", e => { const b = e.target.closest("#modeSeg button"); if (b) setMode(b.dataset.mode); });
 function renderGrowth() {
   const el = $("#growth");
   if (!el) return;
@@ -1744,7 +1831,7 @@ function matchesSearch(t) {
   const hay = foldText(`${t.project} ${t.title} ${t.status} ${t.body}`);
   return searchQuery.split(/\s+/).every(w => hay.includes(w));
 }
-const showAllDone = () => showDone || !!searchQuery;  // 검색 중에는 완료·보류 업무도 찾아 준다
+const showAllDone = () => showDone || !!searchQuery || mode === "chart";  // 검색 중에는 완료·보류 업무도 찾아 준다
 function applySearch() {
   renderFilters(); renderProjectSummary(); renderBoard(); renderSide();
   if (calendar) calendar.refetchEvents();
@@ -1896,6 +1983,12 @@ $("#recurModal").addEventListener("click", e => { if (e.target.id === "recurModa
 /* ---- 이벤트 ---- */
 let archived = [];
 document.addEventListener("click", async e => {
+  const cc = e.target.closest("[data-chart-check]");
+  if (cc) {  // 카드에서 바로 차트 분석 체크
+    const t = tasks.find(x => x.id === cc.dataset.chartCheck); if (!t) return;
+    try { await update({ id: t.id, status: t.status === "완료" ? "할일" : "완료" }); } catch (err) { toast(err.message); }
+    return;
+  }
   const card = e.target.closest(".card, .side .item.task");
   if (card) return openDrawer(card.dataset.id);
   const pchip = e.target.closest(".pchip");
@@ -2002,6 +2095,9 @@ document.addEventListener("click", async e => {
     if (s && s.dataset.s !== t.status) { await update({ id: t.id, status: s.dataset.s }); toast(`'${s.dataset.s}'(으)로 바꿨어요`); }
     const p = e.target.closest("#segPri button");
     if (p && p.dataset.p !== t.priority) await update({ id: t.id, priority: p.dataset.p });
+    if (e.target.id === "chartCheckBtn") { await update({ id: t.id, status: t.status === "완료" ? "할일" : "완료" }); toast(t.status === "완료" ? "분석 체크를 해제했어요" : "차트 분석 완료로 체크했어요"); }
+    if (e.target.id === "chartThemesSave") { await update({ id: t.id, themes: $("#chartThemes").value }); toast("테마를 저장했어요"); }
+    if (e.target.id === "chartViewSave") { await update({ id: t.id, set_view: $("#chartView").value }); toast("관점 메모를 저장했어요 (옵시디언 노트의 '## 관점')"); }
     const q = e.target.closest(".drawer .quick");
     if (q) { const due = quickDate(q.dataset.q); await update({ id: t.id, due }); toast(due ? `마감일 ${due.slice(5).replace("-", "/")}` : "마감일을 지웠어요"); }
     if (e.target.id === "delTask") {
@@ -2120,6 +2216,14 @@ function setView(v) {
 
 function openNew(due, project) {
   const f = $("#newForm"); f.reset(); f.due.value = due || "";
+  const chart = mode === "chart";  // 차트보드: 종목 · 테마 · 시장
+  $("#newTitle").textContent = chart ? "새 종목" : "새 업무";
+  $("#lblTitle").textContent = chart ? "종목 이름" : "업무 이름";
+  $("#lblProject").textContent = chart ? "종목 테마 (쉼표로 여러 개 · 예: 로봇, 자동차)" : "프로젝트";
+  $("#lblPriority").textContent = chart ? "시장" : "우선순위";
+  f.title.placeholder = chart ? "예: 두산로보틱스" : "예: 전장반 USB 케이블 교체";
+  f.project.placeholder = chart ? "예: 로봇" : "예: KC";
+  f.priority.innerHTML = (chart ? ["한국", "미국"] : ["높음", "보통", "낮음"]).map(p => `<option ${p === (chart ? "한국" : "보통") ? "selected" : ""}>${p}</option>`).join("");
   if (project) f.project.value = project;
   else if (projectFilter.size === 1) f.project.value = [...projectFilter][0];
   else if (mode === "growth" && personalSet().size) f.project.value = [...personalSet()][0];
@@ -2128,15 +2232,17 @@ function openNew(due, project) {
 $("#newBtn").onclick = () => openNew("");
 $("#brandTitle").addEventListener("click", toggleMode);
 $("#brandTitle").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleMode(); } });
-$("#modeBtn").addEventListener("click", toggleMode);
+
 $("#newModal").addEventListener("click", e => { const q = e.target.closest(".quick"); if (q) $("#newDue").value = quickDate(q.dataset.q); });
 $("#archiveModal").addEventListener("click", e => { if (e.target.id === "archiveModal") e.target.classList.remove("on"); });
 $("#newForm").onsubmit = async e => {
   e.preventDefault();
   const f = e.target;
   try {
-    const j = await api("/api/task/create", { title: f.title.value, project: f.project.value, due: f.due.value, priority: f.priority.value, checks: f.checks.value });
-    await loadTasks(); $("#newModal").classList.remove("on"); toast("업무를 만들었어요 (Obsidian에도 저장됨)");
+    const chart = mode === "chart";
+    const j = await api("/api/task/create", { title: f.title.value, project: f.project.value, due: f.due.value, priority: f.priority.value, checks: f.checks.value,
+      ...(chart ? { board: "차트", symbol: f.symbol.value } : {}) });
+    await loadTasks(); $("#newModal").classList.remove("on"); toast(chart ? "종목을 만들었어요 (Obsidian에도 저장됨)" : "업무를 만들었어요 (Obsidian에도 저장됨)");
   } catch (err) { toast(err.message); }
 };
 $("#settingsBtn").onclick = async () => {
@@ -2308,7 +2414,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-14.4";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-15.1";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();

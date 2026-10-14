@@ -31,6 +31,9 @@ DEFAULT_CONFIG = {
 }
 STATE_PATH = ROOT / "alarm_state.json"
 STATUSES = ["할일", "진행중", "대기", "완료", "보류"]
+CHART_BOARD = "차트"          # 노트 머리말 board: 차트 → 차트보드 종목 카드 (업무 알림·주간 보고·정기 업무에서 빠진다)
+CHART_MARKETS = ("한국", "미국")  # 차트보드의 우선순위 자리: 시장 구분
+CHART_ORIGINS = ("https://oldhill-kr.github.io", "http://127.0.0.1", "http://localhost")  # 군영 대시보드에서 체크·메모를 보낼 수 있는 곳
 # 프로젝트 색 팔레트 (index.html의 PALETTE와 같은 순서·값이어야 한다)
 PALETTE = ["#3b6ff5", "#e5484d", "#2f9e5b", "#d98a00", "#8e4ec6", "#0f9fb5", "#d6409f", "#6b7a2e", "#c4622d", "#5b6b8c", "#84a800", "#a21caf", "#38a3f5", "#f97362", "#10b981", "#6d28d9", "#8b5e3c", "#be123c", "#c2a000", "#6c8ebf"]
 CHECK_RE = re.compile(r"^(\s*[-*] \[)( |x|X)(\] )(.*)$")
@@ -75,6 +78,23 @@ def read_note(path):
     return fm, body, text
 
 
+def split_themes(v):
+    """'로봇, 자동차' 또는 목록 → ['로봇', '자동차'] (공백·중복 제거). 한 종목이 여러 테마에 속할 수 있다."""
+    items = v if isinstance(v, (list, tuple)) else re.split(r"[,，/·]", str(v or ""))
+    out = []
+    for x in items:
+        x = re.sub(r'[\\/:*?"<>|#^\[\]]', " ", str(x)).strip()
+        if x and x not in out:
+            out.append(x)
+    return out
+
+
+def _themes_of(fm):
+    th = split_themes(fm.get("themes") or [])
+    proj = fm.get("project") or "기타"
+    return th if th and th[0] == proj else [proj] + [x for x in th if x != proj]
+
+
 def task_from_file(path):
     fm, body, _ = read_note(path)
     if fm.get("type") != "업무":
@@ -97,7 +117,10 @@ def task_from_file(path):
         "title": title,
         "project": fm.get("project") or "기타",
         "status": fm.get("status") or "할일",
-        "priority": fm.get("priority") or "보통",
+        "priority": fm.get("priority") or ("한국" if fm.get("board") == CHART_BOARD else "보통"),
+        "board": fm.get("board") or "업무",
+        "symbol": str(fm.get("symbol") or ""),
+        "themes": _themes_of(fm),
         "due": fm.get("due") or None,
         "created": fm.get("created") or None,
         "completed": fm.get("completed") or None,
@@ -157,7 +180,8 @@ def archived_summary():
     return res
 
 
-def list_tasks(include_archived=False):
+def list_tasks(include_archived=False, charts=False):
+    """업무 카드. 차트보드 종목 카드(board: 차트)는 charts=True일 때만 포함한다 (알림·보고서는 기본값으로 뺀다)."""
     d = tasks_dir()
     if not d.exists():
         return []
@@ -165,7 +189,7 @@ def list_tasks(include_archived=False):
     for p in sorted(d.glob("*.md")):
         try:
             t = task_from_file(p)
-            if t and (include_archived or not t["archived"]):
+            if t and (include_archived or not t["archived"]) and (charts or t["board"] != CHART_BOARD):
                 out.append(t)
         except Exception as e:  # 노트 하나가 깨져도 전체는 보여준다
             print("노트 읽기 실패:", p.name, e)
@@ -333,6 +357,9 @@ def update_task(data):
     if data.get("new_title") is not None:
         data = dict(data)
         data["id"] = rename_task(data["id"], data.pop("new_title"))
+    if data.get("themes") is not None:  # 차트 카드: 테마 여러 개 (첫 번째가 대표)
+        data = dict(data)
+        data["id"] = set_card_themes(data["id"], data.pop("themes"))["id"]
     if data.get("project") is not None:  # 프로젝트 변경은 파일 이름이 바뀌므로 먼저 처리하고 새 id로 이어간다
         data = dict(data)
         data["id"] = change_task_project(data["id"], data.pop("project"))
@@ -357,6 +384,9 @@ def update_task(data):
             text = set_frontmatter(text, "due", due)
         if "priority" in data:
             text = set_frontmatter(text, "priority", data["priority"])
+        if "set_view" in data:  # 차트보드: '## 관점' 메모를 통째로 바꾼다
+            memo = str(data.get("set_view") or "").strip()
+            text = _set_section_bullets(text, VIEW_SECTION, [memo] if memo else [])
         if "toggle_check" in data:
             idx, n, out = int(data["toggle_check"]), -1, []
             nl = "\r\n" if "\r\n" in text else "\n"
@@ -547,7 +577,7 @@ def _save_colors(colors):
 def project_colors():
     """프로젝트별 색 {이름: 색}. 한 번 배정한 색은 볼트의 색상 파일에 고정해 다른 프로젝트가 생겨도 안 바뀐다.
     새 프로젝트는 현재 안 쓰는 색 중 첫 번째, 노트가 하나도 없는 프로젝트의 색은 반납된다."""
-    names = {t["project"] for t in list_tasks(include_archived=True)}
+    names = {n for t in list_tasks(include_archived=True, charts=True) for n in t["themes"]}
     with lock:
         saved = _load_colors()
         if saved is None:  # 이전 버전은 config.json에 저장했다 → 한 번만 옮긴다
@@ -568,8 +598,12 @@ def create_task(data):
     title = (data.get("title") or "").strip()
     if not title:
         raise ValueError("업무 이름이 필요해요")
-    project = (data.get("project") or "기타").strip()
-    if project in archived_projects():  # 보관된 프로젝트에 업무를 추가하면 다시 꺼낸다
+    chart = data.get("board") == CHART_BOARD
+    themes = split_themes(data.get("project")) if chart else []
+    project = (themes[0] if themes else None) or ("미분류" if chart else (data.get("project") or "기타").strip())
+    if chart and not data.get("priority"):
+        data = dict(data, priority="한국")
+    if not chart and project in archived_projects():  # 보관된 프로젝트에 업무를 추가하면 다시 꺼낸다
         set_archived(project, False)
     name = re.sub(r'[\\/:*?"<>|#^\[\]]', " ", f"{project} - {title}").strip()
     d = tasks_dir()
@@ -579,10 +613,14 @@ def create_task(data):
         p, i = d / f"{name} ({i}).md", i + 1
     today = date.today().isoformat()
     checks = [c.strip() for c in (data.get("checks") or "").splitlines() if c.strip()]
-    check_lines = "\n".join(f"- [ ] {c}" for c in checks) or "- [ ] "
+    check_lines = "\n".join(f"- [ ] {c}" for c in checks) or ("" if chart else "- [ ] ")
     rec = (data.get("recurring") or "").strip()  # 정기 업무 규칙이 만든 노트는 규칙 id를 머리말에 남긴다
     rec_line = f"recurring: {rec}\n" if rec else ""
-    how = "정기 업무" if rec else "업무보드"
+    how = "정기 업무" if rec else ("차트보드" if chart else "업무보드")
+    board_line = f"board: {CHART_BOARD}\n" + (f"themes: [{', '.join(themes)}]\n" if len(themes) > 1 else "") if chart else ""
+    symbol = re.sub(r"[^0-9A-Za-z.\-]", "", str(data.get("symbol") or ""))
+    symbol_line = f"symbol: {symbol}\n" if symbol else ""
+    tags = "[work, 차트]" if chart else "[work, 업무]"
     p.write_text(
         f"""---
 type: 업무
@@ -591,8 +629,8 @@ status: {data.get('status') or '할일'}
 priority: {data.get('priority') or '보통'}
 due: {data.get('due') or ''}
 created: {today}
-people: []
-{rec_line}tags: [work, 업무]
+{board_line}{symbol_line}people: []
+{rec_line}tags: {tags}
 ---
 
 # {p.stem}
@@ -606,6 +644,101 @@ people: []
         encoding="utf-8",
     )
     return task_from_file(p)
+
+# ---------- 차트보드: 척후 보고의 체크·관점 메모 ----------
+
+VIEW_SECTION = "관점"
+
+
+def _set_section_bullets(text, section, items):
+    """'## <섹션>'의 글머리 줄을 items로 통째로 바꾼다 (없으면 만든다). 줄바꿈은 <br>로 한 줄에 잇는다."""
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    new = [f"- {_oneline(i)}" for i in items if (i or "").strip()]
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == f"## {section}")
+    except StopIteration:
+        if not new:
+            return text
+        return text.rstrip() + nl + nl + f"## {section}" + nl + nl.join(new) + nl
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    tail = [""] if end < len(lines) else []
+    lines[start + 1:end] = new + tail
+    return nl.join(lines)
+
+
+def set_card_themes(task_id, themes):
+    """차트 카드의 테마 목록을 바꾼다. 첫 번째가 대표 테마(파일 이름 접두어), 나머지는 머리말 themes에만 둔다."""
+    themes = split_themes(themes) or ["미분류"]
+    new_id = change_task_project(task_id, themes[0])
+    p = safe_task_path(new_id)
+    with lock:
+        text = p.read_text(encoding="utf-8")
+        text = set_frontmatter(text, "themes", "[" + ", ".join(themes) + "]") if len(themes) > 1 else remove_frontmatter(text, "themes")
+        p.write_text(text, encoding="utf-8", newline="")
+    return task_from_file(p)
+
+
+def find_chart_card(symbol):
+    for t in list_tasks(include_archived=True, charts=True):
+        if t["board"] == CHART_BOARD and t["symbol"] == symbol:
+            return t
+    return None
+
+
+def _chart_market(v):
+    if v in CHART_MARKETS:
+        return v
+    return {"KR": "한국", "US": "미국"}.get(str(v or "").upper(), "한국")
+
+
+def _memo_of(t):
+    """카드 본문의 '## 관점' 글머리를 줄바꿈으로 이어 돌려준다."""
+    head = "## " + VIEW_SECTION
+    if head not in t["body"]:
+        return ""
+    block = t["body"].split(head, 1)[1].split("\n## ")[0]
+    lines = [re.sub(r"^\s*[-*] ", "", l) for l in block.strip().splitlines() if l.strip()]
+    return "\n".join(lines).replace("<br>", "\n")
+
+
+def upsert_chart_scout(data):
+    """군영 대시보드 척후 보고의 [차트 분석 체크]·[관점 메모]를 차트보드 카드에 반영한다.
+    종목 코드로 카드를 찾고 없으면 만든다. 체크 → 상태 '완료'(분석 완료), 해제 → '할일'. 메모는 '## 관점' 섹션."""
+    symbol = re.sub(r"[^0-9A-Za-z.\-]", "", str(data.get("symbol") or ""))
+    if not symbol:
+        raise ValueError("종목 코드가 필요해요")
+    name = re.sub(r'[\\/:*?"<>|#^\[\]]', " ", str(data.get("name") or symbol)).strip() or symbol
+    themes = split_themes(data.get("theme"))
+    card = find_chart_card(symbol)
+    if card is None:
+        card = create_task({"board": CHART_BOARD, "title": name, "project": ", ".join(themes) or "미분류",
+                            "priority": _chart_market(data.get("market")), "symbol": symbol})
+    elif themes and themes != card["themes"]:
+        card = set_card_themes(card["id"], themes)
+    p = safe_task_path(card["id"])
+    with lock:
+        text = p.read_text(encoding="utf-8")
+        if "checked" in data:
+            old = read_note(p)[0].get("status") or "할일"
+            if data["checked"] and old != "완료":
+                text = set_frontmatter(text, "status", "완료")
+                text = set_frontmatter(text, "completed", date.today().isoformat())
+                text = append_log(text, "차트 분석 완료 체크 (척후 보고)")
+            elif not data["checked"] and old == "완료":
+                text = set_frontmatter(text, "status", "할일")
+                text = remove_frontmatter(text, "completed")
+                text = append_log(text, "차트 분석 체크 해제")
+        if "memo" in data:
+            memo = str(data.get("memo") or "").strip()
+            text = _set_section_bullets(text, VIEW_SECTION, [memo] if memo else [])
+        if data.get("scout"):  # 어떤 척후 보고에서 왔는지 한 줄 남긴다 (처음 한 번)
+            sc = str(data["scout"])[:200]
+            if sc not in text:
+                text = append_log(text, f"척후 보고: {sc}", "배경", dated=False)
+        p.write_text(text, encoding="utf-8", newline="")
+    return task_from_file(p)
+
 
 # ---------- 이슈 노트 (Work/이슈) ----------
 
@@ -1561,9 +1694,17 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def _cors_origin(self):
+        """차트 체크 API만 군영 대시보드(허용 목록의 출처)에서 부를 수 있다. 그 밖의 API는 열지 않는다."""
+        o = self.headers.get("Origin") or ""
+        return o if any(o == a or o.startswith(a + ":") for a in CHART_ORIGINS) else ""
+
     def send_json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
+        if urlparse(self.path).path.startswith("/api/chart/") and self._cors_origin():
+            self.send_header("Access-Control-Allow-Origin", self._cors_origin())
+            self.send_header("Vary", "Origin")
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
@@ -1590,7 +1731,7 @@ class Handler(BaseHTTPRequestHandler):
                     ensure_recurring()  # 이번 주기의 정기 업무를 아직 안 만들었으면 만든다
                 except Exception as e:
                     print("정기 업무 생성 실패:", e)
-                self.send_json({"tasks": list_tasks(), "archived": archived_summary(), "colors": project_colors(),
+                self.send_json({"tasks": list_tasks(charts=True), "archived": archived_summary(), "colors": project_colors(),
                                 "personal": sorted(personal_projects()), "today": date.today().isoformat()})
             elif u.path == "/api/issues":
                 self.send_json({"issues": list_issues()})
@@ -1615,6 +1756,11 @@ class Handler(BaseHTTPRequestHandler):
                 LAST_POLL = time.time()
                 with lock:
                     self.send_json({"alerts": list(ALERTS)})
+            elif u.path == "/api/chart/state":  # 군영 대시보드가 열릴 때 체크·메모 상태를 읽어 간다
+                cards = {t["symbol"]: {"checked": t["status"] == "완료", "status": t["status"],
+                                       "theme": ", ".join(x for x in t["themes"] if x != "미분류"), "memo": _memo_of(t)}
+                         for t in list_tasks(charts=True) if t["board"] == CHART_BOARD and t["symbol"]}
+                self.send_json({"cards": cards})
             elif u.path == "/api/config":
                 cfg = load_config()
                 self.send_json({"ics_count": len(cfg["ics_urls"]), "work_dir": cfg["work_dir"], "alarms": cfg.get("alarms", {}),
@@ -1624,11 +1770,33 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_json({"error": str(e)}, 500)
 
+    def do_OPTIONS(self):  # 브라우저의 사전 확인(preflight): 차트 체크 API + 허용된 출처만
+        u = urlparse(self.path)
+        origin = self._cors_origin()
+        if not (u.path.startswith("/api/chart/") and origin):
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Vary", "Origin")
+        self.end_headers()
+
     def do_POST(self):
         u = urlparse(self.path)
         try:
+            if u.path.startswith("/api/chart/") and self.headers.get("Origin") and not self._cors_origin():
+                self.send_json({"error": "허용되지 않은 출처"}, 403)
+                return
             data = self.read_json()
-            if u.path == "/api/task/update":
+            if u.path == "/api/chart/scout":
+                self.send_json({"ok": True, "task": upsert_chart_scout(data)})
+            elif u.path == "/api/task/update":
                 self.send_json({"task": update_task(data)})
             elif u.path == "/api/recurring/list":
                 self.send_json(save_recurring_list(data))
