@@ -3,6 +3,7 @@
 실행: python server.py  →  http://127.0.0.1:8765
 데이터는 Obsidian 노트가 원본이다. 이 서버는 노트를 읽고, 상태·마감·체크리스트·진행 기록만 고쳐 쓴다.
 """
+import calendar
 import json
 import os
 import re
@@ -101,6 +102,7 @@ def task_from_file(path):
         "created": fm.get("created") or None,
         "completed": fm.get("completed") or None,
         "archived": str(fm.get("archived", "")).lower() == "true",
+        "recurring": fm.get("recurring") or "",
         "people": people if isinstance(people, list) else [people],
         "checks": checks,
         "body": body,
@@ -578,6 +580,9 @@ def create_task(data):
     today = date.today().isoformat()
     checks = [c.strip() for c in (data.get("checks") or "").splitlines() if c.strip()]
     check_lines = "\n".join(f"- [ ] {c}" for c in checks) or "- [ ] "
+    rec = (data.get("recurring") or "").strip()  # 정기 업무 규칙이 만든 노트는 규칙 id를 머리말에 남긴다
+    rec_line = f"recurring: {rec}\n" if rec else ""
+    how = "정기 업무" if rec else "업무보드"
     p.write_text(
         f"""---
 type: 업무
@@ -587,7 +592,7 @@ priority: {data.get('priority') or '보통'}
 due: {data.get('due') or ''}
 created: {today}
 people: []
-tags: [work, 업무]
+{rec_line}tags: [work, 업무]
 ---
 
 # {p.stem}
@@ -596,11 +601,307 @@ tags: [work, 업무]
 {check_lines}
 
 ## 진행 기록
-- {today}: 등록 (업무보드)
+- {today}: 등록 ({how})
 """,
         encoding="utf-8",
     )
     return task_from_file(p)
+
+# ---------- 이슈 노트 (Work/이슈) ----------
+
+ISSUE_DIR_NAME = "이슈"
+OPEN_ISSUE_STATUS = ("미해결", "확인필요")
+
+
+def list_issues():
+    """Work/이슈의 노트를 가볍게 읽어 목록으로 (업무 상세의 '관련 이슈'와 주간 보고에 쓴다)."""
+    d = Path(load_config()["work_dir"]) / ISSUE_DIR_NAME
+    if not d.exists():
+        return []
+    vault = load_config()["vault_name"]
+    out = []
+    for p in d.glob("*.md"):
+        try:
+            fm, body, _ = read_note(p)
+            title = p.stem
+            for line in body.splitlines():
+                if line.startswith("# "):
+                    title = line[2:].strip()
+                    break
+            out.append({
+                "id": p.name, "stem": p.stem, "title": title, "date": fm.get("date") or "",
+                "status": fm.get("status") or "", "project": fm.get("project") or "",
+                "category": fm.get("category") or "", "equipment": fm.get("equipment") or "",
+                "mtime": p.stat().st_mtime,
+                "obsidian": f"obsidian://open?vault={quote(vault)}&file={quote('Work/' + ISSUE_DIR_NAME + '/' + p.stem)}",
+            })
+        except Exception as e:
+            print("이슈 노트 읽기 실패:", p.name, e)
+    out.sort(key=lambda i: (i["date"], i["mtime"]), reverse=True)
+    return out
+
+
+# ---------- 대기 경과일 ----------
+
+WAIT_LOG_RE = re.compile(r"^\s*[-*] (\d{4}-\d{2}-\d{2}): 상태 \S+ → 대기\s*$")
+
+
+def wait_since(t):
+    """'대기'로 바꾼 날짜 (진행 기록의 '상태 … → 대기' 줄). 기록이 없으면 노트를 마지막으로 고친 날."""
+    last = None
+    for line in t["body"].splitlines():
+        m = WAIT_LOG_RE.match(line)
+        if m:
+            last = m.group(1)
+    return last or datetime.fromtimestamp(t["mtime"]).date().isoformat()
+
+
+# ---------- 정기(반복) 업무 ----------
+
+RECURRING_FILE = ".업무보드-정기업무.json"  # 볼트에 둬서 웹 버전·다른 PC와 같은 규칙을 쓴다
+WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"]  # 규칙의 요일 값은 자바스크립트와 같게 0=일 … 6=토
+
+
+def _recurring_path():
+    return Path(load_config()["work_dir"]) / RECURRING_FILE
+
+
+def load_recurring():
+    try:
+        doc = json.loads(_recurring_path().read_text(encoding="utf-8"))
+    except Exception:
+        doc = {}
+    items = doc.get("items") if isinstance(doc, dict) else None
+    return {"items": items if isinstance(items, list) else []}
+
+
+def _save_recurring(doc):
+    p = _recurring_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(p)
+
+
+def save_recurring_list(data):
+    import uuid
+    old = {r.get("id"): r for r in load_recurring()["items"]}
+    out, seen = [], set()
+    today = date.today().isoformat()
+    for it in data.get("items") or []:
+        title = (it.get("title") or "").strip()
+        if not title:
+            continue
+        freq = it.get("freq") if it.get("freq") in ("weekly", "monthly") else "weekly"
+        when = str(it.get("when", "")).strip()
+        if when != "last":
+            ok = when.isdigit() and ((freq == "weekly" and 0 <= int(when) <= 6) or (freq == "monthly" and 1 <= int(when) <= 31))
+            if not ok:
+                raise ValueError("요일 또는 날짜가 올바르지 않아요")
+        rid = str(it.get("id") or "")
+        if not rid or rid in seen:
+            rid = "g" + uuid.uuid4().hex[:8]
+        seen.add(rid)
+        prev = old.get(rid) or {}
+        pri = it.get("priority") if it.get("priority") in ("높음", "보통", "낮음") else "보통"
+        out.append({
+            "id": rid, "title": title[:80], "project": (it.get("project") or "").strip() or "기타",
+            "priority": pri, "freq": freq, "when": when, "checks": (it.get("checks") or "").strip(),
+            "since": prev.get("since") or today,  # 이 날짜 이후에 오는 발생일부터 만든다 (저장 전 날짜는 소급하지 않음)
+            "last_period": prev.get("last_period") or "",
+        })
+    with lock:
+        _save_recurring({"items": out})
+    return {"items": out}
+
+
+def _last_workday(start, end):
+    d = end
+    while d >= start:
+        if d.weekday() <= 4 and not is_holiday(d):
+            return d
+        d -= timedelta(days=1)
+    return end
+
+
+def recurring_occurrence(rule, today):
+    """오늘이 속한 주기(주/월)의 (주기 키, 발생 날짜). 주: 월~일 기준, 월: 해당 월."""
+    if rule["freq"] == "monthly":
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        if rule["when"] == "last":
+            occ = _last_workday(date(today.year, today.month, 1), date(today.year, today.month, last_day))
+        else:
+            occ = date(today.year, today.month, min(int(rule["when"]), last_day))
+        return f"{today.year}-{today.month:02d}", occ
+    ws = today - timedelta(days=today.weekday())
+    iso = today.isocalendar()
+    if rule["when"] == "last":  # 그 주의 마지막 근무일 (금요일이 공휴일이면 목요일)
+        occ = _last_workday(ws, ws + timedelta(days=4))
+    else:
+        occ = ws + timedelta(days=(int(rule["when"]) + 6) % 7)
+    return f"{iso[0]}-W{iso[1]:02d}", occ
+
+
+def ensure_recurring():
+    """이번 주기의 정기 업무가 아직 없으면 만든다 (규칙마다 주기당 한 번). 만든 업무 수를 돌려준다."""
+    doc = load_recurring()
+    if not doc["items"]:
+        return 0
+    today = date.today()
+    archived = archived_projects()
+    existing = {(t["recurring"], t["due"]) for t in list_tasks(include_archived=True) if t.get("recurring")}
+    made, changed = 0, False
+    for r in doc["items"]:
+        try:
+            key, occ = recurring_occurrence(r, today)
+        except Exception:
+            continue
+        if r.get("last_period") == key or occ.isoformat() < (r.get("since") or ""):
+            continue
+        if r.get("project") in archived:  # 보관한 프로젝트는 되살리지 않는다
+            continue
+        if (r["id"], occ.isoformat()) not in existing:
+            create_task({"title": f"{r['title']} ({occ:%m-%d})", "project": r.get("project") or "기타",
+                         "due": occ.isoformat(), "priority": r.get("priority") or "보통",
+                         "checks": r.get("checks") or "", "recurring": r["id"]})
+            made += 1
+        r["last_period"] = key
+        changed = True
+    if changed:
+        with lock:
+            fresh = load_recurring()  # 만드는 동안 규칙이 바뀌었을 수 있어 last_period만 옮긴다
+            keys = {r["id"]: r.get("last_period") for r in doc["items"]}
+            for r in fresh["items"]:
+                if keys.get(r.get("id")):
+                    r["last_period"] = keys[r["id"]]
+            _save_recurring(fresh)
+    return made
+
+
+# ---------- 주간 노트 · 보고 ----------
+
+WEEKLY_DIR_NAME = "주간"
+WEEKLY_BEGIN, WEEKLY_END = "<!-- 업무보드:자동 시작 -->", "<!-- 업무보드:자동 끝 -->"
+
+
+def week_bounds(week=None):
+    """'2026-W42' (없으면 이번 주) → (월요일, 일요일, 주 키)."""
+    if week:
+        m = re.fullmatch(r"(\d{4})-W(\d{2})", week.strip())
+        if not m:
+            raise ValueError("주 형식은 2026-W42")
+        start = date.fromisocalendar(int(m.group(1)), int(m.group(2)), 1)
+    else:
+        t = date.today()
+        start = t - timedelta(days=t.weekday())
+    iso = start.isocalendar()
+    return start, start + timedelta(days=6), f"{iso[0]}-W{iso[1]:02d}"
+
+
+def week_title(start, end):
+    th = start + timedelta(days=3)  # 목요일이 속한 달의 몇 번째 주 (ISO 방식)
+    return f"{th.month}월 {(th.day - 1) // 7 + 1}주차 ({start:%m/%d} ~ {end:%m/%d})"
+
+
+def _rule_label(r):
+    if r.get("freq") == "monthly":
+        return "매월 " + ("마지막 근무일" if r.get("when") == "last" else f"{int(r['when'])}일")
+    return "매주 " + ("마지막 근무일" if r.get("when") == "last" else WEEKDAY_KO[int(r["when"])] + "요일")
+
+
+def build_weekly(week=None):
+    start, end, key = week_bounds(week)
+    s, e, today = start.isoformat(), end.isoformat(), date.today()
+    personal = personal_projects()  # 개인(성장) 프로젝트는 업무 보고에서 뺀다
+    ts = [t for t in list_tasks(include_archived=True) if t["project"] not in personal]
+    ref = min(today, end)  # 지난 주는 그 주 일요일, 이번 주는 오늘 기준으로 지연을 센다
+    done = sorted([t for t in ts if t["status"] == "완료" and s <= (t["completed"] or "") <= e], key=lambda t: t["completed"])
+    doing = sorted([t for t in ts if t["status"] in ("진행중", "할일") and not t["archived"]
+                    and (t["status"] == "진행중" or (t["due"] and t["due"] <= e))], key=lambda t: t["due"] or "9999")
+    waiting = sorted([t for t in ts if t["status"] == "대기" and not t["archived"]], key=wait_since)
+    nxt_to = (end + timedelta(days=7)).isoformat()
+    nxt = sorted([t for t in ts if t["status"] in ("진행중", "할일") and not t["archived"] and t["due"]
+                  and e < t["due"] <= nxt_to], key=lambda t: t["due"])
+    issues = list_issues()
+    new_issues = [i for i in issues if s <= i["date"] <= e]
+    open_issues = [i for i in issues if i["status"] in OPEN_ISSUE_STATUS]
+    rules = load_recurring()["items"]
+
+    def short(t):
+        return t["title"].replace(t["project"] + " - ", "")
+
+    def md_day(iso):
+        return iso[5:].replace("-", "/")
+
+    def when_of(t):
+        if not t["due"]:
+            return "마감 미정"
+        late = (ref - date.fromisoformat(t["due"])).days
+        return f"마감 {md_day(t['due'])}" + (f" · 지연 {late}일" if late > 0 else "")
+
+    def waited(t):
+        return f"{max(0, (today - date.fromisoformat(wait_since(t))).days)}일째 대기"
+
+    md = [f"## 📊 업무 요약 (자동 생성 · {today:%m/%d} 기준)",
+          f"- 완료 {len(done)} · 진행·이월 {len(doing)} · 대기 {len(waiting)} · 다음 주 예정 {len(nxt)} · 미해결 이슈 {len(open_issues)}", ""]
+
+    def block(title, rows, fmt):
+        if rows:
+            md.append(f"### {title} ({len(rows)})")
+            md.extend(fmt(r) for r in rows)
+            md.append("")
+    block("✅ 이번 주 완료", done, lambda t: f"- [[{t['id'][:-3]}]] · 완료 {md_day(t['completed'])}")
+    block("🔧 진행·이월", doing, lambda t: f"- [[{t['id'][:-3]}]] · {t['status']} · {when_of(t)}")
+    block("❓ 대기·확인", waiting, lambda t: f"- [[{t['id'][:-3]}]] · {waited(t)}")
+    block("📅 다음 주 예정", nxt, lambda t: f"- [[{t['id'][:-3]}]] · 마감 {md_day(t['due'])}")
+    block("🐞 이번 주 등록 이슈", new_issues, lambda i: f"- [[{i['stem']}]] · {i['status'] or '-'}")
+    block("🚧 미해결 이슈", open_issues, lambda i: f"- [[{i['stem']}]] · {i['status']} · {i['date']}")
+    block("🔁 정기 업무", rules, lambda r: f"- {r['title']} · {_rule_label(r)}")
+    markdown = "\n".join(md).rstrip() + "\n"
+
+    tx = [f"[주간 업무 보고] {key} · {week_title(start, end)}"]
+
+    def tblock(title, rows, fmt):
+        if rows:
+            tx.extend(["", f"■ {title} ({len(rows)})"])
+            tx.extend(f" - {fmt(r)}" for r in rows)
+    tblock("이번 주 완료", done, lambda t: f"[{t['project']}] {short(t)}")
+    tblock("진행·이월", doing, lambda t: f"[{t['project']}] {short(t)} ({when_of(t)})")
+    tblock("대기·확인", waiting, lambda t: f"[{t['project']}] {short(t)} ({waited(t)})")
+    tblock("다음 주 예정", nxt, lambda t: f"[{t['project']}] {short(t)} (마감 {md_day(t['due'])})")
+    tblock("미해결 이슈", open_issues, lambda i: f"{i['title']} ({i['status']})")
+    if len(tx) == 1:
+        tx.append("(이번 주에 정리할 업무가 없어요)")
+    note = f"{WEEKLY_DIR_NAME}/{key}.md"
+    return {"week": key, "start": s, "end": e, "title": week_title(start, end), "note": note,
+            "note_exists": (Path(load_config()["work_dir"]) / note).exists(),
+            "counts": {"done": len(done), "doing": len(doing), "waiting": len(waiting), "next": len(nxt), "issues": len(open_issues)},
+            "markdown": markdown, "text": "\n".join(tx) + "\n"}
+
+
+def save_weekly(data):
+    """주간 노트를 만들거나 갱신한다. 이미 있는 노트는 자동 구간(<!-- 업무보드 -->)만 바꾸고 손으로 쓴 부분은 건드리지 않는다."""
+    r = build_weekly((data or {}).get("week"))
+    d = Path(load_config()["work_dir"]) / WEEKLY_DIR_NAME
+    p = d / f"{r['week']}.md"
+    block = f"{WEEKLY_BEGIN}\n{r['markdown'].rstrip()}\n{WEEKLY_END}"
+    with lock:
+        d.mkdir(parents=True, exist_ok=True)
+        if not p.exists():
+            text = (f"---\ntype: 주간\nweek: {r['week']}\nstart: {r['start']}\nend: {r['end']}\ntags: [work, 주간]\n---\n\n"
+                    f"# {r['title']}\n\n{block}\n\n## 회고 (주말 전에)\n- \n")
+            p.write_text(text, encoding="utf-8", newline="")
+            return {"path": r["note"], "created": True}
+        raw = p.read_bytes().decode("utf-8")
+        nl = "\r\n" if "\r\n" in raw else "\n"
+        text = raw.replace("\r\n", "\n")
+        i, j = text.find(WEEKLY_BEGIN), text.find(WEEKLY_END)
+        if i >= 0 and j > i:
+            text = text[:i] + block + text[j + len(WEEKLY_END):]
+        else:
+            text = text.rstrip("\n") + "\n\n" + block + "\n"
+        p.write_bytes(text.replace("\n", nl).encode("utf-8"))
+    return {"path": r["note"], "created": False}
 
 
 # ---------- 구글 캘린더 (iCal 비공개 주소) ----------
@@ -899,6 +1200,13 @@ def alarm_loop():
             now = datetime.now()
             hm, today = now.strftime("%H:%M"), now.date().isoformat()
             state = load_state()
+            if state.get("recurring") != today:  # 서버만 켜 둬도 그날의 정기 업무가 만들어지게 하루 한 번
+                state["recurring"] = today
+                STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+                try:
+                    ensure_recurring()
+                except Exception as e:
+                    print("정기 업무 생성 실패:", e)
             for kind, at in load_config().get("alarms", {}).items():
                 if not at or kind not in ALARM_UNTIL or state.get(kind) == today:
                     continue
@@ -1278,8 +1586,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
             elif u.path == "/api/tasks":
+                try:
+                    ensure_recurring()  # 이번 주기의 정기 업무를 아직 안 만들었으면 만든다
+                except Exception as e:
+                    print("정기 업무 생성 실패:", e)
                 self.send_json({"tasks": list_tasks(), "archived": archived_summary(), "colors": project_colors(),
                                 "personal": sorted(personal_projects()), "today": date.today().isoformat()})
+            elif u.path == "/api/issues":
+                self.send_json({"issues": list_issues()})
+            elif u.path == "/api/recurring":
+                self.send_json(load_recurring())
+            elif u.path == "/api/weekly":
+                self.send_json(build_weekly((parse_qs(u.query).get("week") or [None])[0]))
             elif u.path == "/api/growth":
                 self.send_json(list_growth())
             elif u.path == "/api/routines":
@@ -1312,6 +1630,10 @@ class Handler(BaseHTTPRequestHandler):
             data = self.read_json()
             if u.path == "/api/task/update":
                 self.send_json({"task": update_task(data)})
+            elif u.path == "/api/recurring/list":
+                self.send_json(save_recurring_list(data))
+            elif u.path == "/api/weekly/save":
+                self.send_json(save_weekly(data))
             elif u.path == "/api/routines/check":
                 self.send_json(set_routine_check(data))
             elif u.path == "/api/routines/list":

@@ -468,6 +468,42 @@ body.has-alert .brand h1::after { content: " 🔔"; }
   .g-tiles { grid-template-columns: repeat(2, 1fr); }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); max-width: 92vw; text-align: center; }
 }
+
+/* ---- 검색 · 대기 경과일 · 정기 업무 · 주간 보고 · 관련 이슈 ---- */
+.searchbox { position: relative; display: inline-flex; align-items: center; }
+.searchbox input { width: 170px; padding: 7px 28px 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); }
+.searchbox input:focus { outline: 0; border-color: var(--accent); background: var(--panel); }
+.searchbox .sc { position: absolute; right: 10px; font-size: 11.5px; color: var(--faint); pointer-events: none; }
+.filter-tools { display: inline-flex; gap: 6px; margin-left: 8px; }
+.wait-days { color: var(--amber); font-weight: 700; font-size: 12px; white-space: nowrap; }
+.card .meta { flex-wrap: wrap; row-gap: 4px; }
+.wait-days.long { color: var(--red); }
+.rec-badge { font-size: 11px; opacity: .8; }
+.rec-row { display: grid; grid-template-columns: 1fr 130px 78px 150px 78px 30px; gap: 6px; align-items: center; margin-bottom: 4px; }
+.rec-row .rc-sub { grid-column: 1 / -1; margin-bottom: 8px; }
+.rec-row .rc-sub textarea { width: 100%; min-height: 56px; resize: vertical; }
+.rec-row input[type=text], .rec-row select { width: 100%; min-width: 0; }
+.wk-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.wk-nav b { font-size: 14px; }
+.wk-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.wk-chips span { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; color: var(--sub); }
+.wk-chips b { color: var(--text); }
+#weeklyText { width: 100%; height: 300px; resize: vertical; font-family: inherit; font-size: 13px; line-height: 1.55; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.iss-list { display: flex; flex-direction: column; gap: 4px; max-height: 190px; overflow-y: auto; }
+.iss { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); text-decoration: none; font-size: 12.5px; }
+a.iss:hover { border-color: var(--accent); }
+.iss .it { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iss .id { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ipill { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
+.ipill.open { background: var(--red-soft); color: var(--red); }
+.ipill.ok { background: var(--panel); border: 1px solid var(--line); color: var(--sub); }
+@media (max-width: 640px) {
+  .searchbox { order: 5; flex: 1 1 100%; }
+  .searchbox input { width: 100%; }
+  .rec-row { grid-template-columns: 1fr 1fr; }
+  .rec-row .rc-title { grid-column: 1 / -1; }
+  .rec-row .rc-del { justify-self: end; }
+}
 </style>
 </head>
 <body>
@@ -475,6 +511,7 @@ body.has-alert .brand h1::after { content: " 🔔"; }
   <div class="brand"><h1 id="brandTitle" role="button" tabindex="0" title="클릭하면 업무 화면 ↔ 성장 화면이 바뀌어요">💼 업무보드</h1><span class="today" id="todayLabel"></span><button class="modeBtn" id="modeBtn" type="button" title="업무 화면 ↔ 성장 화면 전환"></button></div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
+  <div class="searchbox"><input type="search" id="searchBox" placeholder="🔍 검색  ( / )" title="프로젝트·제목·할 일·기록에서 찾기 ( / 키 · Esc로 지우기 )" autocomplete="off"><span class="sc" id="searchCount"></span></div>
   <div class="tabs" role="tablist">
     <button data-view="routine">🔁 루틴</button>
     <button data-view="board" class="on">🗂 카드</button>
@@ -645,6 +682,28 @@ body.has-alert .brand h1::after { content: " 🔔"; }
   </form>
 </div>
 
+<div class="modal" id="weeklyModal">
+  <div class="modal-box" style="width:min(680px,100%)">
+    <h2>📝 주간 보고</h2>
+    <div class="wk-nav"><button type="button" class="btn" data-wk-nav="prev">◀ 지난 주</button><b id="weeklyTitle"></b>
+      <button type="button" class="btn" data-wk-nav="next">다음 주 ▶</button><button type="button" class="btn" data-wk-nav="now">이번 주</button></div>
+    <div class="wk-chips" id="weeklyCounts"></div>
+    <textarea id="weeklyText" readonly spellcheck="false"></textarea>
+    <div id="weeklyNote" class="sm" style="color:var(--sub);font-size:12.5px;margin-top:8px"></div>
+    <div class="actions"><button type="button" class="btn" data-close>닫기</button><button type="button" class="btn" id="weeklyCopy">📋 복사</button><button type="button" class="btn primary" id="weeklySave">📓 옵시디언 노트로 저장</button></div>
+  </div>
+</div>
+
+<div class="modal" id="recurModal">
+  <form class="modal-box" id="recurForm" style="width:min(820px,100%)">
+    <h2>🔁 정기 업무</h2>
+    <div style="color:var(--sub);font-size:12.5px;margin:-6px 0 10px">정해 둔 주기마다 업무가 자동으로 만들어져요. 주 단위는 그 주를 처음 열 때, 월 단위는 그 달을 처음 열 때 만들고 마감일은 정한 요일·날짜로 들어가요. 저장한 날 이전 날짜는 만들지 않아요.</div>
+    <div id="recurRows"></div>
+    <div class="row" style="margin:4px 0 8px;gap:8px"><button type="button" class="btn" id="recurAdd">＋ 정기 업무 추가</button><button type="button" class="btn" id="recurSeed">예시 채우기</button></div>
+    <div class="actions"><button type="button" class="btn" data-close>취소</button><button class="btn primary">저장</button></div>
+  </form>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -699,7 +758,7 @@ function ddayLabel(t) {
 const inScope = t => (typeof isPersonal === "function") ? (mode === "growth") === isPersonal(t) : mode === "work";
 function visible(t) {
   if (!inScope(t)) return false;  // 업무 화면에는 업무 프로젝트만, 성장 화면에는 개인(자기개발) 프로젝트만
-  return (projectFilter.size === 0 || projectFilter.has(t.project)) && (priorityFilter.size === 0 || priorityFilter.has(t.priority));
+  return (projectFilter.size === 0 || projectFilter.has(t.project)) && (priorityFilter.size === 0 || priorityFilter.has(t.priority)) && matchesSearch(t);
 }
 function toast(msg) { const el = $("#toast"); el.textContent = msg; el.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 1800); }
 
@@ -717,6 +776,8 @@ async function loadTasks() {
   tasks = j.tasks; archived = j.archived || []; projectColors = j.colors || {}; today = j.today;
   await loadGrowth();
   await loadRoutines();
+  await loadIssues();
+  await loadRecurringRules();
   renderAll();
 }
 async function loadConfig() { const j = await api("/api/config"); icsCount = j.ics_count; renderNotice(); }
@@ -745,10 +806,10 @@ function renderStats() {
 
 function renderFilters() {
   const counts = {};
-  tasks.filter(t => (showDone || isOpen(t)) && inScope(t)).forEach(t => counts[t.project] = (counts[t.project] || 0) + 1);
+  tasks.filter(t => (showAllDone() || isOpen(t)) && inScope(t) && matchesSearch(t)).forEach(t => counts[t.project] = (counts[t.project] || 0) + 1);
   const names = Object.keys(counts).sort();
   const pcounts = {};  // 우선순위 칩의 개수는 선택한 프로젝트 안에서 센다
-  tasks.filter(t => (showDone || isOpen(t)) && inScope(t) && (projectFilter.size === 0 || projectFilter.has(t.project))).forEach(t => pcounts[t.priority] = (pcounts[t.priority] || 0) + 1);
+  tasks.filter(t => (showAllDone() || isOpen(t)) && inScope(t) && matchesSearch(t) && (projectFilter.size === 0 || projectFilter.has(t.project))).forEach(t => pcounts[t.priority] = (pcounts[t.priority] || 0) + 1);
   $("#filters").innerHTML = `<span class="label">프로젝트</span>` +
     `<button class="chip ${projectFilter.size ? "" : "on"}" data-p="">전체</button>` +
     names.map(p => `<button class="chip ${projectFilter.has(p) ? "on" : ""}" data-p="${esc(p)}"><span class="dot" style="background:${projColor(p)}"></span>${esc(p)} <span style="color:var(--faint)">${counts[p]}</span></button>`).join("") +
@@ -756,6 +817,8 @@ function renderFilters() {
     `<span class="filter-break"></span><span class="label">우선순위</span>` +
     `<button class="pchip ${priorityFilter.size ? "" : "on"}" data-pri="">전체</button>` +
     PRIORITIES.map(pr => `<button class="pchip pri-${pr} ${priorityFilter.has(pr) ? "on" : ""}" data-pri="${pr}"><span class="pmark"></span>${pr} <span style="color:var(--faint)">${pcounts[pr] || 0}</span></button>`).join("") +
+    `<span class="filter-tools"><button class="archbtn" id="weeklyBtn" title="이번 주 완료·이월·대기·이슈를 모아 보고서로">📝 주간 보고</button>` +
+    `<button class="archbtn" id="recurBtn" title="매주·매월 자동으로 만들어지는 업무">🔁 정기 업무${recurRules.length ? " " + recurRules.length : ""}</button></span>` +
     `<label class="toggle"><input type="checkbox" id="doneToggle" ${showDone ? "checked" : ""}> 완료·보류 보기</label>`;
 }
 
@@ -770,10 +833,10 @@ function cardHTML(t) {
   const dd = ddayLabel(t), done = t.checks.filter(c => c.done).length, total = t.checks.length;
   const pc = projColor(t.project);
   return `<div class="card ${t.status === "완료" ? "done" : ""}" data-id="${esc(t.id)}" style="--pc:${pc}">
-    <div class="top"><span class="proj">${esc(t.project)}</span>${t.status !== "할일" ? `<span class="pill ${esc(t.status)}">${esc(t.status)}</span>` : ""}
+    <div class="top"><span class="proj">${esc(t.project)}</span>${t.recurring ? `<span class="rec-badge" title="정기 업무">🔁</span>` : ""}${t.status !== "할일" ? `<span class="pill ${esc(t.status)}">${esc(t.status)}</span>` : ""}
       ${t.checks.some(c => !c.done && isUrgText(c.text)) && isOpen(t) ? `<span class="urg-badge" title="긴급 할 일이 있어요">🔥</span>` : ""}${t.priority === "높음" ? `<span class="pri">높음</span>` : ""}</div>
     <div class="title">${esc(t.title.replace(t.project + " - ", ""))}</div>
-    <div class="meta"><span class="dday ${dd.cls}">${dd.text}</span>${t.due && dd.text.startsWith("D") ? `<span>${t.due.slice(5).replace("-", "/")}</span>` : ""}
+    <div class="meta"><span class="dday ${dd.cls}">${dd.text}</span>${t.due && dd.text.startsWith("D") ? `<span>${t.due.slice(5).replace("-", "/")}</span>` : ""}${waitHTML(t)}
       ${total ? `<span class="prog"><span class="bar"><i style="width:${Math.round(done / total * 100)}%"></i></span>${done}/${total}</span>` : ""}</div>
   </div>`;
 }
@@ -894,7 +957,7 @@ function renderProjectSummary() {
   const steps = [...list].sort((a, b) => (ST_ORDER[a.status] - ST_ORDER[b.status]) || (a.due || "9999").localeCompare(b.due || "9999"));
   el.innerHTML = `<div class="psum" style="--pc:${projColor(p)}">
     <div class="row"><span class="name">${esc(p)}</span><span class="pbar"><i style="width:${Math.round(done / list.length * 100)}%"></i></span>
-      <span class="cnt">${list.length}건 중 ${done}건 완료 · 진행중 ${n("진행중")} · 할일 ${n("할일")} · 대기 ${n("대기")}</span>
+      <span class="cnt">${list.length}건 중 ${done}건 완료 · 진행중 ${n("진행중")} · 할일 ${n("할일")} · 대기 ${n("대기")}${(() => { const oi = issueList.filter(i => i.project === p && OPEN_ISSUE.includes(i.status)).length; return oi ? ` · 🐞 미해결 이슈 ${oi}` : ""; })()}</span>
       <span style="margin-left:auto;display:flex;gap:6px"><button class="btn" data-rename-proj="${esc(p)}">✎ 이름 변경·합치기</button>
       <button class="btn" data-archive-proj="${esc(p)}">📦 프로젝트 보관</button></span></div>
     <div class="steps">${steps.map(t => { const dd = ddayLabel(t), c = t.checks.filter(x => x.done).length;
@@ -904,7 +967,7 @@ function renderProjectSummary() {
   </div>`;
 }
 function renderBoard() {
-  const cols = showDone ? [...COLS, { key: "done", title: "✅ 완료·보류", hint: "" }] : COLS;
+  const cols = showAllDone() ? [...COLS, { key: "done", title: "✅ 완료·보류", hint: "" }] : COLS;
   const order = (a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.priority === "높음" ? -1 : 0) - (b.priority === "높음" ? -1 : 0);
   $("#board").style.setProperty("--cols", cols.length);
   $("#board").innerHTML = cols.map(c => {
@@ -955,7 +1018,7 @@ function initCalendar() {
     headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listWeek" },
     buttonText: { today: "오늘", month: "월", week: "주", list: "목록" },
     eventSources: [
-      { id: "tasks", events: (info, ok) => ok(tasks.filter(t => (t.due || t.created) && visible(t) && (showDone || isOpen(t))).map(t => ({
+      { id: "tasks", events: (info, ok) => ok(tasks.filter(t => (t.due || t.created) && visible(t) && (showAllDone() || isOpen(t))).map(t => ({
           id: t.id, title: t.title.replace(t.project + " - ", ""), start: t.due || t.created, allDay: true, editable: !!t.due,
           classNames: ["task", t.due ? "" : "nodue", isLate(t) ? "late" : "", t.status === "완료" ? "done" : "", t.priority === "높음" ? "pri-hi" : t.priority === "낮음" ? "pri-lo" : ""],
           extendedProps: { kind: "task", project: t.project, color: projColor(t.project), priority: t.priority, priRank: PRIORITIES.indexOf(t.priority) } }))) },
@@ -1017,12 +1080,13 @@ function renderDrawer(t) {
       ${editingTitle ? `<div class="logrow" style="margin-top:6px"><input type="text" id="titleEdit" value="${esc(shortTitle(t))}" style="font-size:16px;font-weight:700"><button class="mini" data-tsave>저장</button><button class="mini" data-tcancel>취소</button></div>`
         : `<h2>${esc(t.title)} <button class="mini icon" data-tedit title="업무 이름 고치기">✎</button></h2>`}
       ${t.people.length ? `<div style="color:var(--sub);font-size:12.5px;margin-top:4px">관련: ${t.people.map(esc).join(", ")}</div>` : ""}
+      ${issuesFor(t).length ? `<button class="mini" data-iss-jump style="margin-top:6px">🐞 관련 이슈 ${issuesFor(t).length}건 보기</button>` : ""}
       <button class="d-close" data-close aria-label="닫기">×</button></div>
     <div class="d-body">
       <div class="field"><label>프로젝트 <span style="color:var(--faint);font-weight:400">(고르면 그 프로젝트로 옮겨져요)</span></label>
         <select id="projSelect" style="width:100%">${[...new Set([...tasks.map(x => x.project), t.project])].sort().map(n =>
           `<option value="${esc(n)}" ${n === t.project ? "selected" : ""}>${esc(n)}</option>`).join("")}<option value="__new__">＋ 새 프로젝트 만들기…</option></select></div>
-      <div class="field"><label>상태</label><div class="seg" id="segStatus">${STATUSES.map(s => `<button data-s="${s}" class="${t.status === s ? "on" : ""}">${s}</button>`).join("")}</div></div>
+      <div class="field"><label>상태 ${t.status === "대기" ? `<span class="wait-days ${waitDays(t) >= 7 ? "long" : ""}" style="margin-left:6px">⏳ ${waitDays(t)}일째 대기 (${esc(waitSince(t).slice(5).replace("-", "/"))}부터)</span>` : ""}${t.recurring ? `<span class="rec-badge" style="margin-left:6px" title="정기 업무 규칙으로 자동 생성됨">🔁 정기 업무</span>` : ""}</label><div class="seg" id="segStatus">${STATUSES.map(s => `<button data-s="${s}" class="${t.status === s ? "on" : ""}">${s}</button>`).join("")}</div></div>
       <div class="field"><label>마감일 ${t.due ? `<span class="dday ${ddayLabel(t).cls}" style="margin-left:6px">${ddayLabel(t).text}</span>` : ""}</label>
         <div class="row"><input type="date" id="dueInput" value="${esc(t.due || "")}">
           <button class="quick" data-q="0">오늘</button><button class="quick" data-q="1">내일</button><button class="quick" data-q="fri">이번 주 금</button><button class="quick" data-q="mon">다음 주 월</button><button class="quick" data-q="clear">지우기</button></div></div>
@@ -1036,6 +1100,7 @@ function renderDrawer(t) {
       <div class="field"><label>기록 추가 <span style="color:var(--faint);font-weight:400">(진행 기록은 오늘 날짜가 자동으로 붙어요)</span></label>
         <div class="logrow"><select id="noteSection" style="flex:none">${noteSectionNames(t.body).map(n => `<option ${n === lastNoteSection ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
           <textarea rows="1" class="ml" id="logInput" placeholder="${TOUCH ? "기록 입력" : "예: 현장 테스트 OK, 김영준 대리 회신 대기 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="logBtn">추가</button></div></div>
+      ${issuesHTML(t)}
       <div class="note">${renderNote(t)}</div>
     </div>
     <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
@@ -1670,6 +1735,164 @@ $("#routineForm").addEventListener("submit", async e => {
   } catch (err) { toast(err.message); }
 });
 
+/* ---- 🔍 검색 · ⏳ 대기 경과일 · 🐞 관련 이슈 · 🔁 정기 업무 · 📝 주간 보고 ---- */
+let searchQuery = "";
+const foldText = s => String(s || "").normalize("NFC").toLowerCase();
+// 검색어를 띄어쓰기로 나눠 모든 단어가 (프로젝트·제목·상태·본문 = 할 일·기록 포함) 들어 있는 업무만 남긴다
+function matchesSearch(t) {
+  if (!searchQuery) return true;
+  const hay = foldText(`${t.project} ${t.title} ${t.status} ${t.body}`);
+  return searchQuery.split(/\s+/).every(w => hay.includes(w));
+}
+const showAllDone = () => showDone || !!searchQuery;  // 검색 중에는 완료·보류 업무도 찾아 준다
+function applySearch() {
+  renderFilters(); renderProjectSummary(); renderBoard(); renderSide();
+  if (calendar) calendar.refetchEvents();
+  const n = $("#searchCount");
+  if (n) n.textContent = searchQuery ? `${tasks.filter(visible).length}건` : "";
+}
+$("#searchBox").addEventListener("input", e => { searchQuery = foldText(e.target.value).trim(); applySearch(); });
+$("#searchBox").addEventListener("keydown", e => {
+  if (e.key === "Escape") { e.target.value = ""; searchQuery = ""; applySearch(); e.target.blur(); }
+});
+document.addEventListener("keydown", e => {  // '/' 를 누르면 검색창으로
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+  e.preventDefault(); $("#searchBox").focus();
+});
+
+const WAIT_LOG_RE = /^\s*[-*] (\d{4}-\d{2}-\d{2}): 상태 \S+ → 대기\s*$/;
+function waitSince(t) {  // '대기'로 바꾼 날짜 (진행 기록의 '상태 … → 대기' 줄). 기록이 없으면 노트를 마지막으로 고친 날
+  let last = null;
+  for (const l of String(t.body || "").split(/\r?\n/)) { const m = WAIT_LOG_RE.exec(l); if (m) last = m[1]; }
+  return last || isoDate(new Date(t.mtime * 1000));
+}
+const waitDays = t => Math.max(0, diffDays(today, waitSince(t)));
+const waitHTML = t => { if (t.status !== "대기") return ""; const n = waitDays(t); return `<span class="wait-days ${n >= 7 ? "long" : ""}" title="${esc(waitSince(t))}부터 대기">⏳ ${n}일째 대기</span>`; };
+
+let issueList = [];
+const OPEN_ISSUE = ["미해결", "확인필요"];
+async function loadIssues() {
+  try { issueList = (await api("/api/issues")).issues || []; } catch (e) { issueList = []; }
+}
+// 같은 프로젝트의 이슈 + 업무 본문에 [[이슈 노트]]로 연결된 이슈. 안 풀린 이슈가 위로
+function issuesFor(t) {
+  const body = String(t.body || "");
+  return issueList.filter(i => (i.project && i.project === t.project) || body.includes(`[[${i.stem}`))
+    .sort((a, b) => (OPEN_ISSUE.includes(b.status) - OPEN_ISSUE.includes(a.status)) || b.date.localeCompare(a.date));
+}
+function issuesHTML(t) {
+  const list = issuesFor(t);
+  if (!list.length) return "";
+  const open = list.filter(i => OPEN_ISSUE.includes(i.status)).length;
+  return `<div class="field"><label>🐞 관련 이슈 ${list.length}건${open ? ` · 미해결 ${open}` : ""} <span style="color:var(--faint);font-weight:400">(같은 프로젝트 · 본문에 연결된 이슈)</span></label>
+    <div class="iss-list">${list.map(i => {
+      const inner = `<span class="ipill ${OPEN_ISSUE.includes(i.status) ? "open" : "ok"}">${esc(i.status || "-")}</span><span class="it">${esc(i.title)}</span><span class="id">${esc(String(i.date || "").slice(5).replace("-", "/"))}</span>`;
+      return i.obsidian ? `<a class="iss" href="${esc(i.obsidian)}" title="Obsidian에서 열기">${inner}</a>` : `<div class="iss" title="${esc(i.stem)}">${inner}</div>`;
+    }).join("")}</div></div>`;
+}
+
+/* 정기 업무: 규칙은 볼트의 .업무보드-정기업무.json 에 두고, 서버·웹이 이번 주기 업무를 자동으로 만든다 */
+let recurRules = [];
+async function loadRecurringRules() {
+  try { recurRules = (await api("/api/recurring")).items || []; } catch (e) { recurRules = []; }
+}
+const WD_KO = ["일", "월", "화", "수", "목", "금", "토"];
+function recurWhenOptions(freq, cur) {
+  const sel = v => (String(cur) === String(v) ? "selected" : "");
+  if (freq === "monthly")
+    return Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}" ${sel(i + 1)}>${i + 1}일</option>`).join("") + `<option value="last" ${sel("last")}>마지막 근무일</option>`;
+  return [1, 2, 3, 4, 5, 6, 0].map(w => `<option value="${w}" ${sel(w)}>${WD_KO[w]}요일</option>`).join("") + `<option value="last" ${sel("last")}>주 마지막 근무일</option>`;
+}
+function recurRowHTML(r = {}) {
+  const freq = r.freq === "monthly" ? "monthly" : "weekly";
+  const when = r.when ?? (freq === "weekly" ? "5" : "1");
+  return `<div class="rec-row" data-id="${esc(r.id || "")}">
+    <input type="text" class="rc-title" maxlength="80" placeholder="업무 이름 (예: 소스 정리 후 NAS 업데이트)" value="${esc(r.title || "")}">
+    <input type="text" class="rc-project" list="projList" placeholder="프로젝트" value="${esc(r.project || "")}">
+    <select class="rc-freq"><option value="weekly" ${freq === "weekly" ? "selected" : ""}>매주</option><option value="monthly" ${freq === "monthly" ? "selected" : ""}>매월</option></select>
+    <select class="rc-when">${recurWhenOptions(freq, when)}</select>
+    <select class="rc-pri">${["높음", "보통", "낮음"].map(p => `<option ${p === (r.priority || "보통") ? "selected" : ""}>${p}</option>`).join("")}</select>
+    <button type="button" class="mini del rc-del" title="규칙 지우기">✕</button>
+    <div class="rc-sub"><textarea class="rc-checks" rows="1" placeholder="할 일 체크리스트 (선택 · 한 줄에 하나)">${esc(r.checks || "")}</textarea></div></div>`;
+}
+function openRecurEditor() {
+  $("#recurRows").innerHTML = (recurRules.length ? recurRules : [{}]).map(recurRowHTML).join("");
+  $("#recurModal").classList.add("on");
+}
+$("#recurRows").addEventListener("change", e => {
+  if (!e.target.classList.contains("rc-freq")) return;
+  const row = e.target.closest(".rec-row");
+  row.querySelector(".rc-when").innerHTML = recurWhenOptions(e.target.value, e.target.value === "weekly" ? "5" : "1");
+});
+$("#recurRows").addEventListener("click", e => { if (e.target.closest(".rc-del")) e.target.closest(".rec-row").remove(); });
+$("#recurAdd").onclick = () => { $("#recurRows").insertAdjacentHTML("beforeend", recurRowHTML({})); $("#recurRows").lastElementChild.querySelector(".rc-title").focus(); };
+$("#recurSeed").onclick = () => {
+  const have = new Set([...document.querySelectorAll("#recurRows .rc-title")].map(i => i.value.trim()));
+  const ex = [{ title: "소스 정리 후 NAS 업데이트", project: "정기 업무", freq: "weekly", when: "last" }, { title: "월간 점검 · 정리", project: "정기 업무", freq: "monthly", when: "last" }];
+  const box = $("#recurRows");
+  if ([...box.querySelectorAll(".rec-row")].every(r => !r.querySelector(".rc-title").value.trim())) box.innerHTML = "";
+  ex.filter(x => !have.has(x.title)).forEach(x => box.insertAdjacentHTML("beforeend", recurRowHTML(x)));
+};
+$("#recurForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const items = [...document.querySelectorAll("#recurRows .rec-row")].map(r => ({
+    id: r.dataset.id, title: r.querySelector(".rc-title").value.trim(), project: r.querySelector(".rc-project").value.trim(),
+    freq: r.querySelector(".rc-freq").value, when: r.querySelector(".rc-when").value, priority: r.querySelector(".rc-pri").value,
+    checks: r.querySelector(".rc-checks").value.trim() })).filter(x => x.title);
+  try {
+    await api("/api/recurring/list", { items });
+    $("#recurModal").classList.remove("on");
+    await loadTasks();
+    toast(items.length ? `정기 업무 ${items.length}개를 저장했어요` : "정기 업무를 모두 지웠어요");
+  } catch (err) { toast(err.message); }
+});
+
+/* 주간 보고: 이번 주(또는 다른 주)의 완료·이월·대기·이슈를 모아 보여 주고, 복사하거나 옵시디언 주간 노트에 저장한다 */
+let weeklyData = null;
+async function openWeekly(week) {
+  try {
+    const j = await api("/api/weekly" + (week ? "?week=" + encodeURIComponent(week) : ""));
+    weeklyData = j;
+    $("#weeklyTitle").textContent = `${j.week} · ${j.title}`;
+    $("#weeklyText").value = j.text;
+    const c = j.counts;
+    $("#weeklyCounts").innerHTML = `<span>완료 <b>${c.done}</b></span><span>진행·이월 <b>${c.doing}</b></span><span>대기 <b>${c.waiting}</b></span><span>다음 주 예정 <b>${c.next}</b></span><span>미해결 이슈 <b>${c.issues}</b></span>`;
+    $("#weeklyNote").textContent = j.note_exists
+      ? `주간 노트(${j.note})가 이미 있어요. ‘노트로 저장’은 자동 구간만 새로 쓰고 직접 쓴 내용은 그대로 둬요.`
+      : `아직 주간 노트가 없어요. ‘노트로 저장’을 누르면 ${j.note}을(를) 만들어요.`;
+    $("#weeklyModal").classList.add("on");
+  } catch (err) { toast(err.message); }
+}
+document.addEventListener("click", async e => {
+  const t = e.target;
+  try {
+    if (t.closest("[data-iss-jump]")) { document.querySelector("#drawer .iss-list")?.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
+    if (t.closest("#weeklyBtn")) return openWeekly("");
+    if (t.closest("#recurBtn")) { await loadRecurringRules(); return openRecurEditor(); }
+    const nav = t.closest("[data-wk-nav]");
+    if (nav && weeklyData) {
+      const k = nav.dataset.wkNav;
+      if (k === "now") return openWeekly("");
+      const d = new Date(weeklyData.start + "T00:00:00"); d.setDate(d.getDate() + (k === "next" ? 7 : -7));
+      return openWeekly(isoWeekKey(d));
+    }
+    if (t.closest("#weeklyCopy")) {
+      const ta = $("#weeklyText");
+      try { await navigator.clipboard.writeText(ta.value); } catch (x) { ta.select(); document.execCommand("copy"); }
+      return toast("보고 내용을 복사했어요");
+    }
+    if (t.closest("#weeklySave") && weeklyData) {
+      const r = await api("/api/weekly/save", { week: weeklyData.week });
+      toast(r.created ? `주간 노트를 만들었어요 (${r.path})` : `주간 노트의 자동 구간을 갱신했어요 (${r.path})`);
+      return openWeekly(weeklyData.week);
+    }
+  } catch (err) { toast(err.message); }
+});
+$("#weeklyModal").addEventListener("click", e => { if (e.target.id === "weeklyModal") e.target.classList.remove("on"); });
+$("#recurModal").addEventListener("click", e => { if (e.target.id === "recurModal") e.target.classList.remove("on"); });
+
 /* ---- 이벤트 ---- */
 let archived = [];
 document.addEventListener("click", async e => {
@@ -2085,7 +2308,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-14.3";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-14.4";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();
