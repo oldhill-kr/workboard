@@ -754,6 +754,27 @@ def show_toast(title, lines):
         raise RuntimeError("알림 표시 실패: " + r.stderr.decode("cp949", "ignore")[:300])
 
 
+# 화면(업무보드 창) 안에 크게 띄우는 알림 대기열. 열려 있는 업무보드가 주기적으로 가져가서 팝업으로 보여 준다.
+ALERTS = []
+LAST_POLL = 0.0   # 마지막으로 업무보드 화면이 알림을 가져간 시각
+ALERT_SEQ = 0
+
+
+def raise_alert(kind, title, lines):
+    """알림을 화면 팝업 대기열에 넣는다. 업무보드가 열려 있지 않으면(최근 90초 안에 확인한 화면이 없으면) Windows 알림도 보낸다."""
+    global ALERT_SEQ
+    with lock:
+        ALERT_SEQ += 1
+        # 같은 종류의 아직 확인 안 한 알림은 새 것으로 교체한다 (쌓이지 않게)
+        ALERTS[:] = [a for a in ALERTS if a["kind"] != kind]
+        ALERTS.append({"id": ALERT_SEQ, "kind": kind, "title": title, "lines": [l for l in lines if l], "ts": time.time()})
+    if time.time() - LAST_POLL > 90:
+        try:
+            show_toast(title, lines)
+        except Exception as e:
+            print("Windows 알림 실패:", e)
+
+
 def short(t):
     return t["title"].replace(t["project"] + " - ", "")
 
@@ -770,8 +791,34 @@ def open_issue_count():
     return n
 
 
+URGENT_MARK = "🔥"  # 할 일 앞에 이 표시가 붙어 있으면 '긴급' (노트에는 `- [ ] 🔥 내용`으로 저장)
+
+
+def urgent_items(tasks=None):
+    """끝나지 않은 업무의 안 한 긴급 할 일 [(업무, 항목 번호, 내용)]. 마감이 가까운 업무가 먼저."""
+    out = []
+    for t in (list_tasks() if tasks is None else tasks):
+        if t["status"] in ("완료", "보류"):
+            continue
+        for i, c in enumerate(t["checks"]):
+            if not c["done"] and c["text"].lstrip().startswith(URGENT_MARK):
+                out.append((t, i, c["text"].lstrip()[len(URGENT_MARK):].strip()))
+    out.sort(key=lambda x: x[0]["due"] or "9999")
+    return out
+
+
+def urgent_lines(items, n=3):
+    names = [f"{t['project']} · {txt}" for t, _, txt in items[:n]]
+    return ", ".join(names) + (f" 외 {len(items) - n}건" if len(items) > n else "")
+
+
 def build_alarm(kind):
     """알림 내용 (title, lines). 보낼 게 없으면 None."""
+    if kind == "urgent":
+        items = urgent_items()
+        if not items:
+            return None
+        return f"🔥 긴급 {len(items)}건 — 먼저 처리하세요", [urgent_lines(items)]
     today = date.today().isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     personal = personal_projects()  # 개인 프로젝트는 업무 알림에서 뺀다
@@ -786,6 +833,9 @@ def build_alarm(kind):
         issues = open_issue_count()
         head = f"지연 {len(late)} · 오늘 마감 {len(due_today)} · 내일 마감 {len(due_tom)} · 일정 {len(evs)}"
         lines = []
+        urg = urgent_items()
+        if urg:
+            lines.append(f"🔥 긴급 {len(urg)}건: " + urgent_lines(urg, 2))
         if evs:
             lines.append("📅 " + ", ".join(("종일 " if e["allDay"] else e["start"][11:16] + " ") + e["title"] for e in evs[:3]))
         focus = due_today + [t for t in late if t["priority"] == "높음"] + late
@@ -799,9 +849,12 @@ def build_alarm(kind):
             lines[-1:] = [(lines[-1] + " " if lines else "") + f"· 확인할 이슈 {issues}건"]
         return f"좋은 아침이에요 ☀ {head}", lines or ["오늘 마감인 업무도, 일정도 없어요."]
     if kind == "evening":
-        if not due_today and not late:
+        urg = urgent_items()
+        if not due_today and not late and not urg:
             return None
         lines = []
+        if urg:
+            lines.append(f"🔥 긴급 {len(urg)}건: " + urgent_lines(urg, 2))
         if due_today:
             lines.append("오늘 마감: " + ", ".join(short(t) for t in due_today[:3]))
         if late:
@@ -861,7 +914,17 @@ def alarm_loop():
                     STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
                     msg = build_alarm(kind)
                     if msg:
-                        show_toast(*msg)
+                        raise_alert(kind, *msg)
+            # 긴급 할 일은 평일 근무 시간에 일정 간격으로 계속 알려 준다 (urgent_every 분, 0이면 끔)
+            every = int(load_config().get("urgent_every", 60) or 0)
+            if every > 0 and now.weekday() < 5 and not is_holiday(now.date()) and "09:00" <= hm <= "18:00":
+                last = float(state.get("urgent_last", 0))
+                if time.time() - last >= every * 60:
+                    state["urgent_last"] = time.time()
+                    STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+                    msg = build_alarm("urgent")
+                    if msg:
+                        raise_alert("urgent", *msg)
         except Exception as e:
             print("알림 오류:", e)
         time.sleep(30)
@@ -1229,9 +1292,15 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/holidays":
                 q = parse_qs(u.query)
                 self.send_json(list_holidays(date.fromisoformat(q["start"][0][:10]), date.fromisoformat(q["end"][0][:10])))
+            elif u.path == "/api/alerts":
+                global LAST_POLL
+                LAST_POLL = time.time()
+                with lock:
+                    self.send_json({"alerts": list(ALERTS)})
             elif u.path == "/api/config":
                 cfg = load_config()
-                self.send_json({"ics_count": len(cfg["ics_urls"]), "work_dir": cfg["work_dir"], "alarms": cfg.get("alarms", {})})
+                self.send_json({"ics_count": len(cfg["ics_urls"]), "work_dir": cfg["work_dir"], "alarms": cfg.get("alarms", {}),
+                                "urgent_every": cfg.get("urgent_every", 60)})
             else:
                 self.send_json({"error": "없는 주소"}, 404)
         except Exception as e:
@@ -1291,12 +1360,24 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("시각은 HH:MM 형식")
                     alarms[k] = v
                 cfg["alarms"] = alarms
+                if "urgent_every" in data:
+                    ue = int(data.get("urgent_every") or 0)
+                    if ue < 0 or ue > 1440:
+                        raise ValueError("긴급 알림 간격은 0~1440분")
+                    cfg["urgent_every"] = ue
                 save_config(cfg)
-                self.send_json({"alarms": alarms})
+                self.send_json({"alarms": alarms, "urgent_every": cfg.get("urgent_every", 60)})
             elif u.path == "/api/notify/test":
                 msg = build_alarm(data.get("kind", "morning")) or ("보낼 알림이 없어요", ["오늘 마감·지연 업무가 없어요."])
-                show_toast(*msg)
+                raise_alert(data.get("kind", "morning"), *msg)
                 self.send_json({"title": msg[0], "lines": msg[1]})
+            elif u.path == "/api/alerts/ack":
+                with lock:
+                    if data.get("id") is None:
+                        ALERTS.clear()
+                    else:
+                        ALERTS[:] = [a for a in ALERTS if a["id"] != int(data["id"])]
+                self.send_json({"ok": True})
             else:
                 self.send_json({"error": "없는 주소"}, 404)
         except ValueError as e:

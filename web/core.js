@@ -647,21 +647,35 @@ tags: [work, 목표]
   };
 
   // ---------- 알림 (브라우저 탭이 열려 있을 때만) ----------
+  const URGENT_MARK = "🔥";
+  function urgentItems(tasks) {
+    const out = [];
+    for (const t of tasks) {
+      if (t.status === "완료" || t.status === "보류") continue;
+      t.checks.forEach((c, i) => { if (!c.done && c.text.trimStart().startsWith(URGENT_MARK)) out.push({ t, i, text: c.text.trimStart().slice(URGENT_MARK.length).trim() }); });
+    }
+    return out.sort((a, b) => (a.t.due || "9999").localeCompare(b.t.due || "9999"));
+  }
+  const urgentLines = (items, n = 3) => items.slice(0, n).map(x => `${x.t.project} · ${x.text}`).join(", ") + (items.length > n ? ` 외 ${items.length - n}건` : "");
   async function alarmMessage(kind) {
     const today = todayISO(), tomorrow = addDaysISO(today, 1);
-    const open = (await listTasks()).filter(t => t.status !== "완료" && t.status !== "보류");
+    const all = await listTasks();
+    const urg = urgentItems(all);
+    if (kind === "urgent") return urg.length ? [`🔥 긴급 ${urg.length}건 — 먼저 처리하세요`, [urgentLines(urg)]] : null;
+    const open = all.filter(t => t.status !== "완료" && t.status !== "보류");
     const late = open.filter(t => t.due && t.due < today).sort((a, b) => a.due.localeCompare(b.due));
     const dueToday = open.filter(t => t.due === today), dueTom = open.filter(t => t.due === tomorrow);
     const short = t => t.title.replace(t.project + " - ", "");
     if (kind === "morning") {
       const names = [...new Set([...dueToday, ...late].map(short))];
       return [`좋은 아침이에요 ☀ 지연 ${late.length} · 오늘 마감 ${dueToday.length} · 내일 마감 ${dueTom.length}`,
-        [names.length ? "✅ " + names.slice(0, 3).join(", ") + (names.length > 3 ? ` 외 ${names.length - 3}건` : "") : "오늘 마감인 업무가 없어요."]];
+        [...(urg.length ? [`🔥 긴급 ${urg.length}건: ` + urgentLines(urg, 2)] : []),
+         names.length ? "✅ " + names.slice(0, 3).join(", ") + (names.length > 3 ? ` 외 ${names.length - 3}건` : "") : "오늘 마감인 업무가 없어요."]];
     }
     if (kind === "evening") {
-      if (!dueToday.length && !late.length) return null;
+      if (!dueToday.length && !late.length && !urg.length) return null;
       return [`퇴근 전 체크 — 못 끝낸 업무 ${dueToday.length + late.length}건`,
-        [(dueToday.length ? "오늘 마감: " + dueToday.slice(0, 3).map(short).join(", ") : ""), (late.length ? `지연 ${late.length}건: ` + late.slice(0, 2).map(short).join(", ") : "")].filter(x => x)];
+        [(urg.length ? `🔥 긴급 ${urg.length}건: ` + urgentLines(urg, 2) : ""), (dueToday.length ? "오늘 마감: " + dueToday.slice(0, 3).map(short).join(", ") : ""), (late.length ? `지연 ${late.length}건: ` + late.slice(0, 2).map(short).join(", ") : "")].filter(x => x)];
     }
     if (kind === "friday") return ["금요일 정기 업무 🔁", ["소스 정리 후 NAS 업데이트, 주간 회고 작성"]];
     if (kind === "review_week" || kind === "review_month") {
@@ -674,9 +688,13 @@ tags: [work, 목표]
     }
     return null;
   }
-  function notify(title, lines) {
-    if (typeof Notification === "undefined") return false;
-    if (Notification.permission !== "granted") { try { Notification.requestPermission(); } catch (e) {} return false; }
+  // 알림은 업무보드 화면 안의 큰 팝업(WB_ALERT)으로 띄우고, 탭이 가려져 있으면 브라우저 알림도 함께 보낸다
+  function notify(title, lines, kind) {
+    let shown = false;
+    if (typeof root.WB_ALERT === "function") { root.WB_ALERT({ kind: kind || "info", title, lines: lines.filter(Boolean) }); shown = true; }
+    if (typeof Notification === "undefined") return shown;
+    if (Notification.permission !== "granted") { if (!shown) { try { Notification.requestPermission(); } catch (e) {} } return shown; }
+    if (typeof document !== "undefined" && document.visibilityState === "visible" && shown) return true;
     new Notification(title, { body: lines.join("\n") });
     return true;
   }
@@ -711,7 +729,18 @@ tags: [work, 목표]
           if (at <= hm && hm <= ALARM_UNTIL[kind]) {
             state[kind] = today; lsSet("wb.alarmState", state);
             const msg = await alarmMessage(kind);
-            if (msg) notify(...msg);
+            if (msg) notify(msg[0], msg[1], kind);
+          }
+        }
+        // 긴급 할 일: 평일 근무 시간에 urgent_every분마다 반복 알림 (0이면 끔)
+        const ev = Number(settings.urgent_every ?? 60), wd2 = now.getDay();
+        const Hh = root.WB_HOLIDAYS || {};
+        if (ev > 0 && wd2 !== 0 && wd2 !== 6 && Hh[isoDate(now)]?.kind !== "holiday" && hm >= "09:00" && hm <= "18:00") {
+          const last = Number(lsGet("wb.urgentLast", 0));
+          if (Date.now() - last >= ev * 60000) {
+            lsSet("wb.urgentLast", Date.now());
+            const msg = await alarmMessage("urgent");
+            if (msg) notify(msg[0], msg[1], "urgent");
           }
         }
       } catch (e) { console.warn("알림 오류", e); }
@@ -731,7 +760,7 @@ tags: [work, 목표]
       if (p === "/api/holidays") return listHolidays(q.get("start") || "0000-01-01", q.get("end") || "9999-12-31");
       if (p === "/api/growth") return listGrowth();
       if (p === "/api/routines") return loadRoutines();
-      if (p === "/api/config") return { ics_count: CAL ? 1 : 0, work_dir: A ? A.label : "", alarms: settings.alarms, static: true };
+      if (p === "/api/config") return { ics_count: CAL ? 1 : 0, work_dir: A ? A.label : "", alarms: settings.alarms, urgent_every: settings.urgent_every ?? 60, static: true };
       fail("없는 주소");
     }
     if (p === "/api/growth/review") return saveReview(body);
@@ -754,14 +783,20 @@ tags: [work, 목표]
         if (v && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) fail("시각은 HH:MM 형식");
         a[k] = v;
       }
-      settings.alarms = a; lsSet("wb.settings", settings);
+      settings.alarms = a;
+      if ("urgent_every" in body) {
+        const ue = Number(body.urgent_every || 0);
+        if (!(ue >= 0 && ue <= 1440)) fail("긴급 알림 간격은 0~1440분");
+        settings.urgent_every = Math.floor(ue);
+      }
+      lsSet("wb.settings", settings);
       if (Object.values(a).some(v => v) && typeof Notification !== "undefined" && Notification.permission === "default") { try { Notification.requestPermission(); } catch (e) {} }
       return { alarms: a };
     }
     if (p === "/api/config/ics") fail("웹 버전에서는 구글 캘린더 연동을 아직 지원하지 않아요");
     if (p === "/api/notify/test") {
       const msg = (await alarmMessage(body.kind || "morning")) || ["보낼 알림이 없어요", ["오늘 마감·지연 업무가 없어요."]];
-      if (!notify(...msg)) fail("브라우저 알림 권한을 허용해 주세요 (주소창 왼쪽 자물쇠 → 알림 허용)");
+      if (!notify(msg[0], msg[1], body.kind || "morning")) fail("브라우저 알림 권한을 허용해 주세요 (주소창 왼쪽 자물쇠 → 알림 허용)");
       return { title: msg[0], lines: msg[1] };
     }
     fail("없는 주소");

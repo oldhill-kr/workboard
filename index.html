@@ -367,6 +367,30 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
   .board { grid-template-columns: repeat(var(--cols, 5), 260px); }
 }
 
+#alertModal { z-index: 60; background: rgba(0,0,0,.55); }
+.alert-box { width: min(560px, 100%); border-top: 8px solid var(--accent); text-align: left; animation: alertIn .18s ease-out; }
+.alert-box.urgent { border-top-color: var(--red); }
+@keyframes alertIn { from { transform: translateY(14px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.alert-box .a-title { font-size: 22px; font-weight: 800; letter-spacing: -.02em; line-height: 1.35; margin: 2px 0 12px; }
+.alert-box .a-lines { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.alert-box .a-line { font-size: 16px; line-height: 1.55; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.alert-box .u-item { padding: 10px 12px; } .alert-box .u-text { font-size: 16px; }
+.alert-box .a-more { color: var(--sub); font-size: 13px; margin-bottom: 12px; }
+.alert-box .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.alert-box .actions .btn { padding: 10px 16px; font-size: 15px; }
+body.has-alert .brand h1::after { content: " 🔔"; }
+#urgentBar.on { background: var(--red-soft); border-bottom: 1px solid var(--red); padding: 8px 24px 10px; position: sticky; top: 0; z-index: 11; }
+.u-head { display: flex; gap: 10px; align-items: baseline; font-size: 13px; } .u-head b { color: var(--red); } .u-head span { color: var(--sub); font-size: 12px; }
+.u-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.u-item { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--pc); border-radius: 9px; padding: 5px 10px; max-width: 100%; }
+.u-item input { width: 17px; height: 17px; accent-color: var(--red); flex: none; cursor: pointer; }
+.u-main { display: flex; gap: 8px; align-items: baseline; cursor: pointer; min-width: 0; }
+.u-proj { font-size: 11.5px; font-weight: 700; color: var(--pc); white-space: nowrap; }
+.u-text { font-size: 13.5px; font-weight: 600; white-space: pre-wrap; word-break: break-word; }
+.u-more { margin-top: 6px; border: 0; background: transparent; color: var(--red); font-weight: 600; font-size: 12.5px; padding: 2px 0; }
+.urg-badge { font-size: 12px; }
+.mini.urg { opacity: .35; } .mini.urg.on { opacity: 1; }
+#urgNew { opacity: .5; } #urgNew.on { opacity: 1; background: var(--red-soft); border-color: var(--red); }
 .povw { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 0 0 12px; }
 .pov { text-align: left; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--pc); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
 .pov:hover { background: var(--panel-2); }
@@ -393,6 +417,7 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
   .brand h1 { font-size: 17px; }
   .brand .today { display: none; }
   #refreshBtn { display: none; }
+  #urgentBar.on { padding: 8px 14px 10px; position: static; }
   .stats { order: 5; flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px 2px; }
   .stats::-webkit-scrollbar { display: none; }
   .stat { flex: none; padding: 4px 10px; font-size: 12.5px; }
@@ -461,6 +486,7 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
   <button class="btn icon" id="settingsBtn" title="설정 (캘린더·알림)">⚙</button>
   <button class="btn icon" id="refreshBtn" title="새로고침">↻</button>
 </header>
+<div id="urgentBar"></div>
 
 <div class="filters" id="filters"></div>
 
@@ -503,6 +529,10 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
     <div class="field"><label>할 일 체크리스트 (한 줄에 하나, 선택)</label><textarea name="checks" rows="7" placeholder="한 줄에 업무 하나씩 입력하세요. 내용이 길어도 한 줄로 계속 쓰면 됩니다 (줄바꿈하면 다른 항목이 돼요)"></textarea></div>
     <div class="actions"><button type="button" class="btn" data-close>취소</button><button class="btn primary">만들기</button></div>
   </form>
+</div>
+
+<div class="modal" id="alertModal">
+  <div class="modal-box alert-box" id="alertBox"></div>
 </div>
 
 <div class="modal" id="archiveModal">
@@ -595,6 +625,7 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
         <span>🔁 금요일 정기</span><input type="time" name="friday"><button type="button" class="quick" data-test="friday">테스트</button>
         <span>📝 주간 회고 (주 마지막 근무일)</span><input type="time" name="review_week"><button type="button" class="quick" data-test="review_week">테스트</button>
         <span>🗓 월간 회고 (월 마지막 근무일)</span><input type="time" name="review_month"><button type="button" class="quick" data-test="review_month">테스트</button>
+        <span>🔥 긴급 반복 알림 (분 간격, 0=끔)</span><input type="number" name="urgent_every" min="0" max="1440" step="10" style="width:90px"><button type="button" class="quick" data-test="urgent">테스트</button>
       </div></div>
     <div class="field" id="storageField" style="display:none"><label>저장 위치</label>
       <div class="row"><span id="storageNow" class="sm"></span><button type="button" class="quick" id="storageChange">저장 위치 바꾸기</button></div></div>
@@ -693,7 +724,7 @@ async function loadConfig() { const j = await api("/api/config"); icsCount = j.i
 function renderAll() {
   const d = new Date(today + "T00:00:00");
   $("#todayLabel").textContent = `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`;
-  renderStats(); renderFilters(); renderProjectSummary(); renderBoard(); renderSide(); renderGrowth(); renderRoutine();
+  renderUrgent(); renderStats(); renderFilters(); renderProjectSummary(); renderBoard(); renderSide(); renderGrowth(); renderRoutine();
   if (calendar) calendar.refetchEvents();
   if (current) { const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); }
   $("#projList").innerHTML = [...new Set(tasks.map(t => t.project))].map(p => `<option value="${esc(p)}">`).join("");
@@ -740,11 +771,100 @@ function cardHTML(t) {
   const pc = projColor(t.project);
   return `<div class="card ${t.status === "완료" ? "done" : ""}" data-id="${esc(t.id)}" style="--pc:${pc}">
     <div class="top"><span class="proj">${esc(t.project)}</span>${t.status !== "할일" ? `<span class="pill ${esc(t.status)}">${esc(t.status)}</span>` : ""}
-      ${t.priority === "높음" ? `<span class="pri">높음</span>` : ""}</div>
+      ${t.checks.some(c => !c.done && isUrgText(c.text)) && isOpen(t) ? `<span class="urg-badge" title="긴급 할 일이 있어요">🔥</span>` : ""}${t.priority === "높음" ? `<span class="pri">높음</span>` : ""}</div>
     <div class="title">${esc(t.title.replace(t.project + " - ", ""))}</div>
     <div class="meta"><span class="dday ${dd.cls}">${dd.text}</span>${t.due && dd.text.startsWith("D") ? `<span>${t.due.slice(5).replace("-", "/")}</span>` : ""}
       ${total ? `<span class="prog"><span class="bar"><i style="width:${Math.round(done / total * 100)}%"></i></span>${done}/${total}</span>` : ""}</div>
   </div>`;
+}
+
+/* ---- 🔔 알림 팝업: Windows 알림 대신 업무보드 화면 가운데에 크게 띄운다 ---- */
+let alertQueue = [], alertCur = null, alertSnooze = {};
+const ALERT_ICON = { morning: "☀", evening: "🌆", friday: "🔁", review_week: "📝", review_month: "🗓", urgent: "🔥" };
+window.WB_ALERT = a => {  // 웹(서버 없는) 모드의 알림도 같은 팝업을 쓴다
+  alertQueue = alertQueue.filter(x => x.kind !== a.kind);
+  alertQueue.push({ id: "w" + Date.now(), ...a });
+  showNextAlert();
+};
+function showNextAlert() {
+  if (alertCur || !alertQueue.length) return;
+  alertCur = alertQueue.shift();
+  document.body.classList.add("has-alert");
+  drawAlert();
+  $("#alertModal").classList.add("on");
+}
+function drawAlert() {
+  const a = alertCur; if (!a) return;
+  const box = $("#alertBox");
+  box.className = "modal-box alert-box " + (a.kind === "urgent" ? "urgent" : "");
+  let body = "";
+  if (a.kind === "urgent") {  // 긴급은 지금 남은 목록을 실시간으로 보여 주고 바로 체크할 수 있게
+    const items = urgentItems();
+    if (!items.length) { dismissAlert(true); return; }
+    body = `<div class="u-list" style="margin-top:0;flex-direction:column;margin-bottom:14px">${items.slice(0, 8).map(x => `
+      <div class="u-item" style="--pc:${projColor(x.t.project)}">
+        <input type="checkbox" data-uchk="${esc(x.t.id)}" data-uidx="${x.i}" title="끝냈으면 체크">
+        <span class="u-main" data-alert-open="${esc(x.t.id)}"><span class="u-proj">${esc(x.t.project)}</span><span class="u-text">${esc(fromStore(x.text))}</span></span>
+        ${x.t.due ? `<span class="dday ${ddayLabel(x.t).cls}">${ddayLabel(x.t).text}</span>` : ""}</div>`).join("")}</div>
+      ${items.length > 8 ? `<div class="a-more">외 ${items.length - 8}건은 화면 위 긴급 바에서 확인하세요</div>` : ""}`;
+    a.title = `🔥 긴급 ${items.length}건 — 먼저 처리하세요`;
+  } else {
+    body = `<div class="a-lines">${(a.lines || []).map(l => `<div class="a-line">${esc(l)}</div>`).join("") || `<div class="a-line">내용이 없어요</div>`}</div>`;
+  }
+  box.innerHTML = `<div class="a-title">${esc(a.title)}</div>${body}
+    <div class="actions"><button class="btn" data-alert-snooze>30분 뒤 다시</button><button class="btn primary" data-alert-ok>확인했어요</button></div>`;
+}
+async function dismissAlert(ack, snoozeMin) {
+  const a = alertCur; alertCur = null;
+  $("#alertModal").classList.remove("on");
+  document.body.classList.toggle("has-alert", alertQueue.length > 0);
+  if (a && ack && !String(a.id).startsWith("w")) { try { await api("/api/alerts/ack", { id: a.id }); } catch (e) {} }
+  if (a && snoozeMin) setTimeout(() => { alertQueue.push({ ...a, id: "w" + Date.now() }); showNextAlert(); }, snoozeMin * 60000);
+  showNextAlert();
+}
+async function pollAlerts() {
+  if (STATIC_MODE) return;  // 웹 모드는 코어가 직접 WB_ALERT를 호출한다
+  try {
+    const j = await api("/api/alerts");
+    for (const a of j.alerts || []) {
+      if ((alertCur && alertCur.id === a.id) || alertQueue.some(x => x.id === a.id)) continue;
+      alertQueue = alertQueue.filter(x => x.kind !== a.kind);
+      alertQueue.push(a);
+    }
+    showNextAlert();
+  } catch (e) {}
+}
+setInterval(pollAlerts, 15000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pollAlerts(); });
+setTimeout(pollAlerts, 1500);
+
+/* ---- 🔥 긴급: 할 일 앞에 🔥를 붙이면 긴급. 어느 화면에서나 위에 고정돼 계속 보인다 ---- */
+const URG = "🔥";
+const isUrgText = s => String(s || "").trimStart().startsWith(URG);
+const stripUrg = s => String(s || "").trimStart().slice(URG.length).trim();
+let urgOpen = false;
+function urgentItems() {
+  const out = [];
+  for (const t of tasks) {
+    if (!isOpen(t)) continue;
+    t.checks.forEach((c, i) => { if (!c.done && isUrgText(c.text)) out.push({ t, i, text: stripUrg(c.text) }); });
+  }
+  return out.sort((a, b) => (a.t.due || "9999").localeCompare(b.t.due || "9999"));
+}
+function renderUrgent() {
+  const items = urgentItems(), el = $("#urgentBar");
+  document.title = (items.length ? `🔥${items.length} ` : "") + "업무보드";
+  if (alertCur && alertCur.kind === "urgent") drawAlert();
+  if (!items.length) { el.innerHTML = ""; el.className = ""; return; }
+  const LIMIT = 3, shown = urgOpen ? items : items.slice(0, LIMIT);
+  el.className = "on";
+  el.innerHTML = `<div class="u-head"><b>🔥 긴급 ${items.length}건</b><span>먼저 처리하세요 · 체크하면 사라져요</span></div>
+    <div class="u-list">${shown.map(x => { const dd = ddayLabel(x.t);
+      return `<div class="u-item" style="--pc:${projColor(x.t.project)}">
+        <input type="checkbox" data-uchk="${esc(x.t.id)}" data-uidx="${x.i}" title="완료로 체크">
+        <span class="u-main" data-uopen="${esc(x.t.id)}"><span class="u-proj">${esc(x.t.project)}</span><span class="u-text">${esc(fromStore(x.text))}</span></span>
+        ${x.t.due ? `<span class="dday ${dd.cls}">${dd.text}</span>` : ""}</div>`; }).join("")}</div>
+    ${items.length > LIMIT ? `<button class="u-more" data-umore>${urgOpen ? "접기 ▴" : `외 ${items.length - LIMIT}건 더 보기 ▾`}</button>` : ""}`;
 }
 
 /* 프로젝트를 고르지 않았을 때: 프로젝트별 진행률을 한눈에 (누르면 그 프로젝트만 선택) */
@@ -911,8 +1031,8 @@ function renderDrawer(t) {
         <div class="checks">${t.checks.map((c, i) => editingCheck === i
           ? `<div class="check editing"><textarea rows="1" class="ml" id="checkEdit" data-ei="${i}">${esc(fromStore(c.text))}</textarea><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
           : `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span class="ctext">${esc(fromStore(c.text)) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label>
-              <button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
-        <div class="logrow" style="margin-top:6px"><textarea rows="1" class="ml" id="checkInput" placeholder="${TOUCH ? "＋ 할 일 추가" : "＋ 할 일 추가 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="checkBtn">추가</button></div></div>
+              <button class="mini icon urg ${isUrgText(c.text) ? "on" : ""}" data-urg="${i}" title="${isUrgText(c.text) ? "긴급 해제" : "긴급으로 표시"}">🔥</button><button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
+        <div class="logrow" style="margin-top:6px"><textarea rows="1" class="ml" id="checkInput" placeholder="${TOUCH ? "＋ 할 일 추가" : "＋ 할 일 추가 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="urgNew" type="button" title="긴급으로 추가">🔥</button><button class="btn" id="checkBtn">추가</button></div></div>
       <div class="field"><label>기록 추가 <span style="color:var(--faint);font-weight:400">(진행 기록은 오늘 날짜가 자동으로 붙어요)</span></label>
         <div class="logrow"><select id="noteSection" style="flex:none">${noteSectionNames(t.body).map(n => `<option ${n === lastNoteSection ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
           <textarea rows="1" class="ml" id="logInput" placeholder="${TOUCH ? "기록 입력" : "예: 현장 테스트 OK, 김영준 대리 회신 대기 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="logBtn">추가</button></div></div>
@@ -1595,6 +1715,19 @@ document.addEventListener("click", async e => {
       projectFilter.clear(); projectFilter.add(name); await loadTasks();
       toast(`${merge ? "합쳤어요" : "이름을 바꿨어요"} (업무 ${r.count}건, 링크 ${r.links_updated}곳 갱신)`); return;
     }
+    if (e.target.closest("[data-alert-ok]")) { await dismissAlert(true); return; }
+    if (e.target.closest("[data-alert-snooze]")) { await dismissAlert(true, 30); toast("30분 뒤에 다시 알려 드릴게요"); return; }
+    const ao = e.target.closest("[data-alert-open]");
+    if (ao) { const id = ao.dataset.alertOpen; await dismissAlert(true); openDrawer(id); return; }
+    if (e.target.closest("[data-umore]")) { urgOpen = !urgOpen; renderUrgent(); return; }
+    const uo = e.target.closest("[data-uopen]");
+    if (uo) { openDrawer(uo.dataset.uopen); return; }
+    const uc = e.target.closest("[data-uchk]");
+    if (uc) {
+      await update({ id: uc.dataset.uchk, toggle_check: Number(uc.dataset.uidx) });
+      toast("긴급 할 일을 끝냈어요 👍"); return;
+    }
+    if (e.target.id === "urgNew") { e.target.classList.toggle("on"); return; }
     const pv = e.target.closest("[data-povw]");
     if (pv) { projectFilter.clear(); projectFilter.add(pv.dataset.povw); renderAll(); return; }
     const ap = e.target.closest("[data-archive-proj]");
@@ -1657,6 +1790,13 @@ document.addEventListener("click", async e => {
       return;
     }
     if (e.target.id === "logBtn") addLog();
+    const ug = e.target.closest("[data-urg]");
+    if (ug) {
+      const i = Number(ug.dataset.urg), c = t.checks[i];
+      const nt = isUrgText(c.text) ? stripUrg(c.text) : `${URG} ${c.text.trim()}`;
+      await update({ id: t.id, edit_check: i, text: nt });
+      toast(isUrgText(nt) ? "긴급으로 표시했어요 — 위쪽에 계속 보여요" : "긴급을 해제했어요"); return;
+    }
     if (e.target.closest("[data-tedit]")) {
       editingTitle = true; redrawDrawer(t); const ti = $("#titleEdit"); if (ti) { ti.focus(); ti.select(); }
       return;
@@ -1714,6 +1854,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && e.target.id === "checkEdit") { editingCheck = null; e.target.remove(); const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); return; }
   // 새 업무 팝업은 쓰던 내용이 사라지지 않도록 취소·만들기 버튼으로만 닫는다
   if (e.key === "Escape" && $("#newModal").classList.contains("on")) return;
+  if (e.key === "Escape" && $("#alertModal").classList.contains("on")) return;  // 알림은 '확인했어요'로만 닫는다
   if (e.key === "Escape") { document.querySelectorAll(".modal.on").forEach(m => m.classList.remove("on")); closeDrawer(); }
   if (e.key === "Enter" && !e.shiftKey && e.target.classList && e.target.classList.contains("ml")) e.preventDefault();  // Shift+Enter만 줄바꿈
   if (e.key === "Enter" && !e.shiftKey && e.target.id === "logInput") addLog();
@@ -1732,7 +1873,9 @@ async function addLog() {
   catch (err) { const i = $("#logInput"); if (i) i.value = v; toast(err.message); }
 }
 async function addCheck() {
-  const inp = $("#checkInput"), v = inp.value.trim(); if (!v) return;
+  const inp = $("#checkInput"), raw = inp.value.trim(); if (!raw) return;
+  const urg = $("#urgNew")?.classList.contains("on");
+  const v = urg && !isUrgText(raw) ? `${URG} ${raw}` : raw;
   inp.value = "";
   try { await update({ id: current, add_check: v }); $("#checkInput")?.focus(); }
   catch (err) { const i = $("#checkInput"); if (i) i.value = v; toast(err.message); }
@@ -1775,7 +1918,7 @@ $("#newForm").onsubmit = async e => {
 };
 $("#settingsBtn").onclick = async () => {
   const f = $("#settingsForm"); f.urls.value = "";
-  try { const j = await api("/api/config"); for (const k of ["morning", "evening", "friday", "review_week", "review_month"]) if (f[k]) f[k].value = j.alarms?.[k] || ""; } catch (e) {}
+  try { const j = await api("/api/config"); for (const k of ["morning", "evening", "friday", "review_week", "review_month"]) if (f[k]) f[k].value = j.alarms?.[k] || ""; f.urgent_every.value = j.urgent_every ?? 60; } catch (e) {}
   $("#icsBlock").style.display = STATIC_MODE ? "none" : "";
   $("#gcalBlock").style.display = STATIC_MODE ? "" : "none";
   if (STATIC_MODE) updateGcalLabel();
@@ -1786,14 +1929,14 @@ $("#settingsBtn").onclick = async () => {
 $("#settingsModal").addEventListener("click", async e => {
   if (e.target.id === "settingsModal") e.target.classList.remove("on");
   const b = e.target.closest("[data-test]");
-  if (b) { try { await api("/api/notify/test", { kind: b.dataset.test }); toast("알림을 보냈어요. 화면 오른쪽 아래를 보세요"); } catch (err) { toast(err.message); } }
+  if (b) { try { await api("/api/notify/test", { kind: b.dataset.test }); toast("알림을 보냈어요. 잠시 후 화면 가운데에 팝업으로 떠요"); setTimeout(pollAlerts, 800); $("#settingsModal").classList.remove("on"); } catch (err) { toast(err.message); } }
 });
 $("#settingsForm").onsubmit = async e => {
   e.preventDefault();
   const f = e.target;
   const urls = f.urls.value.split(/\n/).map(s => s.trim()).filter(Boolean);
   try {
-    await api("/api/config/alarms", { morning: f.morning.value, evening: f.evening.value, friday: f.friday.value, review_week: f.review_week.value, review_month: f.review_month.value });
+    await api("/api/config/alarms", { morning: f.morning.value, evening: f.evening.value, friday: f.friday.value, review_week: f.review_week.value, review_month: f.review_month.value, urgent_every: Number(f.urgent_every.value || 0) });
     if (urls.length) { const j = await api("/api/config/ics", { ics_urls: urls }); icsCount = j.ics_count; if (calendar) calendar.refetchEvents(); else refreshEventsForSide(); }
     $("#settingsModal").classList.remove("on");
     toast(urls.length ? `저장했어요 · 캘린더 ${icsCount}개 연결됨` : "저장했어요");
@@ -1942,7 +2085,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-14.1";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-14.3";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();
