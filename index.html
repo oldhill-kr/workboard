@@ -367,6 +367,12 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
   .board { grid-template-columns: repeat(var(--cols, 5), 260px); }
 }
 
+.povw { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.pov { text-align: left; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--pc); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
+.pov:hover { background: var(--panel-2); }
+.pov .pn { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pov .pb { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; } .pov .pb i { display: block; height: 100%; background: var(--pc); }
+.pov .pm { font-size: 11.5px; color: var(--sub); } .pov .pm b { color: var(--red); }
 .psum { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--pc); border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; box-shadow: var(--shadow); }
 .psum .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .psum .name { font-weight: 700; font-size: 15px; }
@@ -378,6 +384,65 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
 .psum .step.s-진행중 { border-top-color: var(--accent); } .psum .step.s-대기 { border-top-color: var(--amber); } .psum .step.s-완료 { border-top-color: var(--green); opacity: .65; }
 .psum .step .t { font-weight: 600; font-size: 13px; }
 .psum .step .m { display: flex; gap: 8px; margin-top: 4px; font-size: 11.5px; color: var(--sub); }
+
+/* ---- 모바일 (폰) ---- */
+@media (max-width: 640px) {
+  body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
+  header { gap: 8px 10px; padding: 10px 14px 8px; position: sticky; top: 0; z-index: 12; }
+  .brand { flex: 1 1 auto; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .brand h1 { font-size: 17px; }
+  .brand .today { display: none; }
+  #refreshBtn { display: none; }
+  .stats { order: 5; flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px 2px; }
+  .stats::-webkit-scrollbar { display: none; }
+  .stat { flex: none; padding: 4px 10px; font-size: 12.5px; }
+  .spacer { display: none; }
+  /* 화면 전환 탭은 하단 고정 바로 */
+  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; border-radius: 0; border: 0; border-top: 1px solid var(--line);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--panel); gap: 4px; }
+  .tabs button { flex: 1; padding: 11px 4px; font-size: 14px; border-radius: 10px; }
+  #newBtn { position: fixed; right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 24; padding: 12px 18px; border-radius: 999px; box-shadow: var(--shadow-lg); font-size: 15px; }
+  .drawer.on ~ #newBtn, body:has(.drawer.on) #newBtn, body:has(.modal.on) #newBtn { display: none; }
+  .btn.icon { padding: 9px 11px; }
+  .filters { flex-wrap: nowrap; overflow-x: auto; padding: 10px 14px 0; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  .filters > * { flex: none; }
+  main { padding: 12px 14px 20px; }
+  /* 카드 보드: 한 칸씩 밀어서 넘기기 */
+  .board { grid-template-columns: repeat(var(--cols, 5), 84vw); gap: 10px; scroll-snap-type: x mandatory; margin: 0 -14px; padding: 0 14px 8px; scroll-padding: 0 14px; }
+  .col { scroll-snap-align: start; }
+  .card { padding: 12px; }
+  /* 상세 창: 화면 가득, 누르기 쉽게 */
+  .drawer { width: 100%; }
+  .d-head { padding: 14px 16px 10px; }
+  .d-head h2 { font-size: 17px; padding-right: 36px; }
+  .d-close { width: 40px; height: 40px; font-size: 24px; }
+  .d-body { padding: 14px 16px 24px; }
+  .d-foot { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  input[type=text], input[type=date], select, textarea { font-size: 16px; }  /* iOS 확대 방지 */
+  .seg button, .quick { padding: 9px 13px; font-size: 13.5px; }
+  .check .mini { opacity: .75; min-width: 36px; min-height: 36px; }
+  .check label { padding: 6px 0; }
+  .logrow { flex-wrap: wrap; }
+  .logrow select { flex: 1 1 100% !important; }
+  .logrow textarea, .logrow input { flex: 1 1 0; min-width: 0; }
+  /* 팝업: 아래에서 올라오는 시트 */
+  .modal { padding: 0; place-items: end center; }
+  .modal-box { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+  .modal-box .actions { position: sticky; bottom: -18px; background: var(--panel); padding: 10px 0 2px; }
+  /* 달력 */
+  .fc .fc-toolbar { flex-wrap: wrap; gap: 6px; }
+  .fc .fc-toolbar-title { font-size: 15px; }
+  .fc .fc-button { padding: 7px 9px; }
+  .fc .fc-daygrid-day-frame { min-height: 74px; }
+  .fc .fc-daygrid-event { font-size: 10.5px; }
+  .fc .hname { display: none; }
+  /* 성장 · 루틴 */
+  .g-hero { padding: 16px; gap: 12px; }
+  .g-hero .bigquote { font-size: 20px; }
+  .g-tiles { grid-template-columns: repeat(2, 1fr); }
+  .toast { bottom: calc(76px + env(safe-area-inset-bottom)); max-width: 92vw; text-align: center; }
+}
 </style>
 </head>
 <body>
@@ -682,10 +747,25 @@ function cardHTML(t) {
   </div>`;
 }
 
+/* 프로젝트를 고르지 않았을 때: 프로젝트별 진행률을 한눈에 (누르면 그 프로젝트만 선택) */
+function overviewHTML() {
+  const by = {};
+  for (const t of tasks.filter(inScope)) {
+    if (projectFilter.size && !projectFilter.has(t.project)) continue;
+    const o = by[t.project] || (by[t.project] = { name: t.project, total: 0, done: 0, late: 0, doing: 0 });
+    o.total++; if (t.status === "완료") o.done++; if (isLate(t)) o.late++; if (t.status === "진행중") o.doing++;
+  }
+  const list = Object.values(by).sort((a, b) => b.late - a.late || (b.total - b.done) - (a.total - a.done));
+  if (list.length < 2) return "";
+  return `<div class="povw">${list.map(o => `<button class="pov" data-povw="${esc(o.name)}" style="--pc:${projColor(o.name)}" title="이 프로젝트만 보기">
+      <span class="pn">${esc(o.name)}</span>
+      <span class="pb"><i style="width:${Math.round(o.done / o.total * 100)}%"></i></span>
+      <span class="pm">${o.done}/${o.total}${o.doing ? ` · 진행 ${o.doing}` : ""}${o.late ? ` · <b>지연 ${o.late}</b>` : ""}</span></button>`).join("")}</div>`;
+}
 const ST_ORDER = { "진행중": 0, "대기": 1, "할일": 2, "완료": 3, "보류": 4 };
 function renderProjectSummary() {
   const el = $("#projSummary");
-  if (projectFilter.size !== 1) { el.innerHTML = ""; return; }
+  if (projectFilter.size !== 1) { el.innerHTML = overviewHTML(); return; }
   const p = [...projectFilter][0];
   const list = tasks.filter(t => t.project === p);
   if (!list.length) { el.innerHTML = ""; return; }
@@ -719,7 +799,9 @@ function renderArchive() {
   $("#archiveList").innerHTML = archived.map(a => `<div class="arch-row"><div class="info"><div class="nm">${esc(a.project)}</div>
       <div class="sm">업무 ${a.total}건 · 완료 ${a.done}건${a.last ? " · 마지막 활동 " + a.last : ""}</div></div>
       <button class="btn" data-arch-add="${esc(a.project)}">＋ 업무 추가</button>
-      <button class="btn" data-arch-restore="${esc(a.project)}">보드로 꺼내기</button></div>`).join("") || `<div class="empty">보관된 프로젝트가 없어요</div>`;
+      <button class="btn" data-arch-restore="${esc(a.project)}">보드로 꺼내기</button>
+      <button class="btn icon" data-arch-rename="${esc(a.project)}" title="이름 변경·합치기">✎</button>
+      <button class="btn icon danger" data-arch-del="${esc(a.project)}" title="휴지통으로 보내기">🗑</button></div>`).join("") || `<div class="empty">보관된 프로젝트가 없어요</div>`;
   const b = $("#archBtn"); if (b) b.textContent = `📦 보관함 ${archived.length}`;
 }
 
@@ -749,7 +831,7 @@ function initCalendar() {
       const r = e => { const x = e.extendedProps || e; return x.kind === "task" ? (x.priRank < 0 ? 1 : x.priRank) : 1.5; };
       return r(a) - r(b) || String(a.title).localeCompare(String(b.title));
     },
-    locale: "ko", initialView: "dayGridMonth", height: "auto", firstDay: 0, nowIndicator: true, dayMaxEvents: 6,
+    locale: "ko", initialView: matchMedia("(max-width: 640px)").matches ? "listWeek" : "dayGridMonth", height: "auto", firstDay: 0, nowIndicator: true, dayMaxEvents: 6,
     headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listWeek" },
     buttonText: { today: "오늘", month: "월", week: "주", list: "목록" },
     eventSources: [
@@ -830,10 +912,10 @@ function renderDrawer(t) {
           ? `<div class="check editing"><textarea rows="1" class="ml" id="checkEdit" data-ei="${i}">${esc(fromStore(c.text))}</textarea><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
           : `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span class="ctext">${esc(fromStore(c.text)) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label>
               <button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
-        <div class="logrow" style="margin-top:6px"><textarea rows="1" class="ml" id="checkInput" placeholder="＋ 할 일 추가 (Enter 저장 · Shift+Enter 줄바꿈)"></textarea><button class="btn" id="checkBtn">추가</button></div></div>
+        <div class="logrow" style="margin-top:6px"><textarea rows="1" class="ml" id="checkInput" placeholder="${TOUCH ? "＋ 할 일 추가" : "＋ 할 일 추가 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="checkBtn">추가</button></div></div>
       <div class="field"><label>기록 추가 <span style="color:var(--faint);font-weight:400">(진행 기록은 오늘 날짜가 자동으로 붙어요)</span></label>
         <div class="logrow"><select id="noteSection" style="flex:none">${noteSectionNames(t.body).map(n => `<option ${n === lastNoteSection ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
-          <textarea rows="1" class="ml" id="logInput" placeholder="예: 현장 테스트 OK, 김영준 대리 회신 대기 (Enter 저장 · Shift+Enter 줄바꿈)"></textarea><button class="btn" id="logBtn">추가</button></div></div>
+          <textarea rows="1" class="ml" id="logInput" placeholder="${TOUCH ? "기록 입력" : "예: 현장 테스트 OK, 김영준 대리 회신 대기 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="logBtn">추가</button></div></div>
       <div class="note">${renderNote(t)}</div>
     </div>
     <div class="d-foot">${t.obsidian ? `<a class="btn" href="${esc(t.obsidian)}">Obsidian에서 열기</a>` : ""}<button class="btn danger" id="delTask" style="margin-left:auto">업무 삭제</button></div>`;
@@ -1513,12 +1595,39 @@ document.addEventListener("click", async e => {
       projectFilter.clear(); projectFilter.add(name); await loadTasks();
       toast(`${merge ? "합쳤어요" : "이름을 바꿨어요"} (업무 ${r.count}건, 링크 ${r.links_updated}곳 갱신)`); return;
     }
+    const pv = e.target.closest("[data-povw]");
+    if (pv) { projectFilter.clear(); projectFilter.add(pv.dataset.povw); renderAll(); return; }
     const ap = e.target.closest("[data-archive-proj]");
     if (ap) {
       const p = ap.dataset.archiveProj, openN = tasks.filter(x => x.project === p && isOpen(x)).length;
       if (!confirm(`'${p}' 프로젝트를 보관할까요?\n\n보드·달력·알림에서 사라지고 📦 보관함으로 이동해요.` + (openN ? `\n(아직 끝나지 않은 업무 ${openN}건도 함께 숨겨져요)` : "") + `\n업무 노트는 그대로 두고, 나중에 보관함에서 꺼낼 수 있어요.`)) return;
       await api("/api/project/archive", { project: p, archived: true });
       projectFilter.delete(p); await loadTasks(); toast(`'${p}' 프로젝트를 보관했어요`); return;
+    }
+    const arn = e.target.closest("[data-arch-rename]");
+    if (arn) {
+      const p = arn.dataset.archRename, others = archived.map(a => a.project).filter(x => x !== p);
+      const to = prompt(`'${p}' 프로젝트의 새 이름을 입력하세요.
+
+· 새 이름이면 이름만 바뀌어요.
+· 보관함에 이미 있는 이름이면 그 프로젝트로 합쳐져요.` + (others.length ? `
+
+보관된 프로젝트: ${others.join(", ")}` : ""), p);
+      const name = (to || "").trim();
+      if (!name || name === p) return;
+      const r = await api("/api/project/rename", { from: p, to: name });
+      await loadTasks(); renderArchive();
+      toast(`이름을 바꿨어요 (업무 ${r.count}건, 링크 ${r.links_updated}곳 갱신)`); return;
+    }
+    const adl = e.target.closest("[data-arch-del]");
+    if (adl) {
+      const p = adl.dataset.archDel, n = (archived.find(a => a.project === p) || {}).total || 0;
+      if (!confirm(`'${p}' 프로젝트의 업무 ${n}건을 휴지통으로 보낼까요?
+
+노트는 지워지지 않고 Work/_휴지통 폴더로 옮겨져요. 옵시디언에서 다시 꺼낼 수 있어요.`)) return;
+      const r = await api("/api/project/delete", { project: p });
+      await loadTasks(); renderArchive();
+      toast(`'${p}' 업무 ${r.count}건을 휴지통으로 보냈어요`); return;
     }
     const ar = e.target.closest("[data-arch-restore]"), aa = e.target.closest("[data-arch-add]");
     if (ar || aa) {
@@ -1597,8 +1706,10 @@ document.addEventListener("change", async e => {
     if (e.target.dataset.ci !== undefined) await update({ id: current, toggle_check: Number(e.target.dataset.ci) });
   } catch (err) { toast(err.message); }
 });
+const TOUCH = matchMedia("(pointer: coarse)").matches;  // 폰·태블릿: Enter는 줄바꿈, 저장은 버튼
 document.addEventListener("keydown", e => {
-  if (e.isComposing) return;  // 한글 조합 중 Enter·Esc는 무시
+  if (e.isComposing) return;
+  if (TOUCH && e.key === "Enter" && e.target.classList && e.target.classList.contains("ml")) return;  // 한글 조합 중 Enter·Esc는 무시
   if (e.key === "Escape" && e.target.id === "noteEdit") { editingNote = null; const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); return; }
   if (e.key === "Escape" && e.target.id === "checkEdit") { editingCheck = null; e.target.remove(); const t = tasks.find(x => x.id === current); if (t) redrawDrawer(t); return; }
   // 새 업무 팝업은 쓰던 내용이 사라지지 않도록 취소·만들기 버튼으로만 닫는다
@@ -1831,7 +1942,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-13.4";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-14.1";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();

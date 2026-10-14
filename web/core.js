@@ -333,6 +333,22 @@ ${checkLines}
     return Object.values(out).sort((a, b) => b.mtime - a.mtime)
       .map(o => ({ ...o, last: o.mtime ? isoDate(new Date(o.mtime * 1000)) : null }));
   }
+  async function deleteProject(project) {
+    project = (project || "").trim();
+    if (!project) fail("프로젝트 이름이 필요해요");
+    await syncNotes();
+    const ids = [];
+    for (const [path, c] of [...cache.entries()]) {
+      if (!path.startsWith(TASK_DIR + "/")) continue;
+      const { fm } = readNote(c.text);
+      if (fm.type === "업무" && (fm.project || "기타") === project) {
+        if (String(fm.archived).toLowerCase() !== "true") fail("보관함에 있는 프로젝트만 삭제할 수 있어요");
+        ids.push(path.slice(TASK_DIR.length + 1));
+      }
+    }
+    for (const id of ids) await deleteTask({ id });
+    return { count: ids.length };
+  }
   async function setArchived(project, flag) {
     project = (project || "").trim();
     if (!project) fail("프로젝트 이름이 필요해요");
@@ -728,6 +744,7 @@ tags: [work, 목표]
     if (p === "/api/task/update") return updateTask(body);
     if (p === "/api/task/create") return createTask(body);
     if (p === "/api/task/delete") return deleteTask(body);
+    if (p === "/api/project/delete") return deleteProject(body.project);
     if (p === "/api/project/archive") { await setArchived(body.project, body.archived !== false); return { ok: true }; }
     if (p === "/api/project/rename") return renameProject(body);
     if (p === "/api/config/alarms") {

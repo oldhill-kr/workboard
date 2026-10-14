@@ -493,6 +493,19 @@ def rename_project(old, new):
     return {"count": len(notes), "renamed": len(moved), "links_updated": links}
 
 
+def delete_project(project):
+    """보관된 프로젝트의 업무 노트를 모두 Work/_휴지통으로 옮긴다 (옵시디언에서 되살릴 수 있음)."""
+    project = (project or "").strip()
+    if not project:
+        raise ValueError("프로젝트 이름이 필요해요")
+    if project not in archived_projects():
+        raise ValueError("보관함에 있는 프로젝트만 삭제할 수 있어요")
+    ids = [t["id"] for t in list_tasks(include_archived=True) if t["project"] == project]
+    for i in ids:
+        delete_task({"id": i})
+    return {"count": len(ids)}
+
+
 def change_task_project(task_id, new):
     """업무 하나의 프로젝트만 바꾼다 (파일 이름·제목·링크 포함). 새 노트 id(파일명)를 돌려준다."""
     new = (new or "").strip()
@@ -1253,6 +1266,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"personal": names})
             elif u.path == "/api/project/rename":
                 self.send_json(rename_project(data.get("from"), data.get("to")))
+            elif u.path == "/api/project/delete":
+                self.send_json(delete_project(data.get("project")))
             elif u.path == "/api/project/archive":
                 set_archived(data.get("project"), bool(data.get("archived", True)))
                 self.send_json({"ok": True})
