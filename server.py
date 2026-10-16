@@ -295,11 +295,11 @@ def edit_check_line(text, idx, new_text):
     return nl.join(out)
 
 
-def add_check_line(text, item):
+def add_check_line(text, item, done=False):
     """'## 할 일' 섹션의 마지막 체크박스 뒤에 추가 (빈 체크박스가 있으면 그 자리에)."""
     nl = "\r\n" if "\r\n" in text else "\n"
     lines = text.split(nl)
-    new = f"- [ ] {item}"
+    new = f"- [{'x' if done else ' '}] {item}"
     for i, l in enumerate(lines):
         cm = CHECK_RE.match(l)
         if cm and not cm.group(4).strip():
@@ -353,7 +353,37 @@ def _oneline(s):
     return re.sub(r"[ \t]*\r?\n[ \t]*", "<br>", (s or "").strip())
 
 
+def move_check(task_id, mv):
+    """같은 프로젝트의 다른 업무 노트로 할 일 하나를 옮긴다 (체크 상태·🔥 긴급 표시 유지). 원래 업무를 돌려준다."""
+    idx, to = int(mv.get("idx")), (mv.get("to") or "").strip()
+    if not to or to == task_id:
+        raise ValueError("옮길 업무를 골라 주세요")
+    with lock:
+        sp, tp = safe_task_path(task_id), safe_task_path(to)
+        sfm, _, stext = read_note(sp)
+        tfm, _, ttext = read_note(tp)
+        if (sfm.get("project") or "기타") != (tfm.get("project") or "기타"):
+            raise ValueError("같은 프로젝트 안에서만 옮길 수 있어요")
+        n, found = -1, None
+        for line in stext.split("\r\n" if "\r\n" in stext else "\n"):
+            cm = CHECK_RE.match(line)
+            if cm:
+                n += 1
+                if n == idx:
+                    found = (cm.group(4), cm.group(2) != " ")
+                    break
+        if found is None:
+            raise ValueError("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요")
+        new_t = add_check_line(ttext, found[0], found[1])
+        new_s = edit_check_line(stext, idx, None)
+        tp.write_text(new_t, encoding="utf-8", newline="")  # 받는 쪽을 먼저 써서 중간에 실패해도 할 일이 사라지지 않게
+        sp.write_text(new_s, encoding="utf-8", newline="")
+    return task_from_file(sp)
+
+
 def update_task(data):
+    if data.get("move_check") is not None:
+        return move_check(data["id"], data["move_check"])
     if data.get("new_title") is not None:
         data = dict(data)
         data["id"] = rename_task(data["id"], data.pop("new_title"))

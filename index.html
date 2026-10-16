@@ -1175,10 +1175,15 @@ function renderDrawer(t) {
           <button class="quick" data-q="0">오늘</button><button class="quick" data-q="1">내일</button><button class="quick" data-q="fri">이번 주 금</button><button class="quick" data-q="mon">다음 주 월</button><button class="quick" data-q="clear">지우기</button></div></div>
       <div class="field"><label>${chart ? "시장" : "우선순위"}</label><div class="seg" id="segPri">${(chart ? ["한국", "미국"] : ["높음", "보통", "낮음"]).map(p => `<button data-p="${p}" class="${t.priority === p ? "on" : ""}">${p}</button>`).join("")}</div></div>
       <div class="field"><label>할 일 ${t.checks.length ? `${t.checks.filter(c => c.done).length}/${t.checks.length}` : ""}</label>
-        <div class="checks">${t.checks.map((c, i) => editingCheck === i
+        <div class="checks">${t.checks.map((c, i) => movingCheck === i
+          ? `<div class="check editing mv"><span class="ctext" style="flex:1 1 100%">${esc(fromStore(c.text))}</span>
+              <select id="moveSel" style="flex:1;min-width:0">${tasks.filter(x => x.project === t.project && x.id !== t.id).map(x =>
+                `<option value="${esc(x.id)}">${esc(x.title.replace(x.project + " - ", ""))} (${esc(x.status)})</option>`).join("")}</select>
+              <button class="mini" data-mvgo="${i}">여기로 이동</button><button class="mini" data-mvcancel>취소</button></div>`
+          : editingCheck === i
           ? `<div class="check editing"><textarea rows="1" class="ml" id="checkEdit" data-ei="${i}">${esc(fromStore(c.text))}</textarea><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
           : `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span class="ctext">${esc(fromStore(c.text)) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label>
-              <button class="mini icon urg ${isUrgText(c.text) ? "on" : ""}" data-urg="${i}" title="${isUrgText(c.text) ? "긴급 해제" : "긴급으로 표시"}">🔥</button><button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
+              <button class="mini icon urg ${isUrgText(c.text) ? "on" : ""}" data-urg="${i}" title="${isUrgText(c.text) ? "긴급 해제" : "긴급으로 표시"}">🔥</button><button class="mini icon" data-mv="${i}" title="같은 프로젝트의 다른 업무로 옮기기">⇄</button><button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
         <div class="logrow" style="margin-top:6px"><textarea rows="1" class="ml" id="checkInput" placeholder="${TOUCH ? "＋ 할 일 추가" : "＋ 할 일 추가 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="urgNew" type="button" title="긴급으로 추가">🔥</button><button class="btn" id="checkBtn">추가</button></div></div>
       <div class="field"><label>기록 추가 <span style="color:var(--faint);font-weight:400">(진행 기록은 오늘 날짜가 자동으로 붙어요)</span></label>
         <div class="logrow"><select id="noteSection" style="flex:none">${noteSectionNames(t.body).map(n => `<option ${n === lastNoteSection ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
@@ -1192,6 +1197,7 @@ function renderDrawer(t) {
 function fromStore(s) { return String(s || "").replace(/<br\s*\/?>/gi, "\n"); }
 function autoGrow(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 220) + "px"; }
 document.addEventListener("input", e => { if (e.target.classList && e.target.classList.contains("ml")) autoGrow(e.target); });
+let movingCheck = null;
 let editingCheck = null, editingNote = null, editingTitle = false, lastNoteSection = "진행 기록";
 function shortTitle(t) { const p = t.project + " - "; return t.title.startsWith(p) ? t.title.slice(p.length) : t.title; }
 
@@ -1255,7 +1261,7 @@ function redrawDrawer(t) {
 }
 function openDrawer(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
-  current = id; editingCheck = null; editingNote = null; editingTitle = false; renderDrawer(t);
+  current = id; editingCheck = null; editingNote = null; editingTitle = false; movingCheck = null; renderDrawer(t);
   $("#drawer").classList.add("on"); $("#scrim").classList.add("on"); $("#drawer").setAttribute("aria-hidden", "false");
 }
 function closeDrawer() { current = null; $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); $("#drawer").setAttribute("aria-hidden", "true"); }
@@ -2136,6 +2142,21 @@ document.addEventListener("click", async e => {
       toast("기록을 지웠어요"); return;
     }
     if (e.target.id === "checkBtn") addCheck();
+    const mvb = e.target.closest("[data-mv]");
+    if (mvb) {
+      if (!tasks.some(x => x.project === t.project && x.id !== t.id)) { toast("이 프로젝트에 옮겨 갈 다른 업무가 없어요"); return; }
+      movingCheck = Number(mvb.dataset.mv); editingCheck = null; redrawDrawer(t); return;
+    }
+    if (e.target.closest("[data-mvcancel]")) { movingCheck = null; redrawDrawer(t); return; }
+    const mvg = e.target.closest("[data-mvgo]");
+    if (mvg) {
+      const to = $("#moveSel")?.value, dest = tasks.find(x => x.id === to);
+      if (!dest) return toast("옮길 업무를 골라 주세요");
+      movingCheck = null;
+      await update({ id: t.id, move_check: { idx: Number(mvg.dataset.mvgo), to } });
+      await loadTasks();  // 받는 업무도 갱신
+      toast(`'${dest.title.replace(dest.project + " - ", "")}'(으)로 옮겼어요`); return;
+    }
     const ed = e.target.closest("[data-edit]");
     if (ed) { editingCheck = Number(ed.dataset.edit); $("#checkEdit")?.remove(); redrawDrawer(t); const inp = $("#checkEdit"); inp.focus(); inp.select(); }
     if (e.target.closest("[data-cancel]")) { editingCheck = null; $("#checkEdit")?.remove(); redrawDrawer(t); }
@@ -2414,7 +2435,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-15.2";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-16.1";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();

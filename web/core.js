@@ -113,8 +113,8 @@
     if (!found) fail("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
     return out.join("\n");
   }
-  function addCheckLine(text, item) {
-    const lines = text.split("\n"), nw = `- [ ] ${item}`;
+  function addCheckLine(text, item, done = false) {
+    const lines = text.split("\n"), nw = `- [${done ? "x" : " "}] ${item}`;
     for (let i = 0; i < lines.length; i++) {
       const cm = CHECK_RE.exec(lines[i]);
       if (cm && !cm[4].trim()) { lines[i] = nw; return lines.join("\n"); }
@@ -217,8 +217,26 @@
     await fixLinks({ [stem]: newStem });
     return dest.slice(TASK_DIR.length + 1);
   }
+  async function moveCheck(id, mv) {
+    const idx = Number(mv.idx), to = (mv.to || "").trim();
+    if (!to || to === id) fail("옮길 업무를 골라 주세요");
+    const sp = taskPath(id), tp = taskPath(to);
+    const stext = norm(cache.get(sp).text), ttext = norm(cache.get(tp).text);
+    if ((readNote(stext).fm.project || "기타") !== (readNote(ttext).fm.project || "기타")) fail("같은 프로젝트 안에서만 옮길 수 있어요");
+    let n = -1, found = null;
+    for (const line of stext.split("\n")) {
+      const cm = CHECK_RE.exec(line);
+      if (cm) { n++; if (n === idx) { found = { text: cm[4], done: cm[2] !== " " }; break; } }
+    }
+    if (!found) fail("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
+    await putNote(tp, addCheckLine(ttext, found.text, found.done));  // 받는 쪽을 먼저 저장
+    const ns = editCheckLine(stext, idx, null);
+    await putNote(sp, ns);
+    return { task: taskFromNote(id, ns, cache.get(sp).mtime) };
+  }
   async function updateTask(data) {
     await syncNotes();
+    if (data.move_check != null) return moveCheck(data.id, data.move_check);
     if (data.new_title != null) data = { ...data, id: await renameTask(data.id, data.new_title) };
     if (data.project != null) data = { ...data, id: await changeTaskProject(data.id, data.project) };
     const path = taskPath(data.id);
