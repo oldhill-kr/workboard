@@ -354,28 +354,29 @@ def _oneline(s):
 
 
 def move_check(task_id, mv):
-    """같은 프로젝트의 다른 업무 노트로 할 일 하나를 옮긴다 (체크 상태·🔥 긴급 표시 유지). 원래 업무를 돌려준다."""
-    idx, to = int(mv.get("idx")), (mv.get("to") or "").strip()
+    """다른 업무 노트로 할 일 하나를 옮긴다 (프로젝트가 달라도 됨) (체크 상태·🔥 긴급 표시 유지). 원래 업무를 돌려준다."""
+    idxs = sorted({int(i) for i in (mv.get("idxs") if mv.get("idxs") is not None else [mv.get("idx")])})
+    to = (mv.get("to") or "").strip()
     if not to or to == task_id:
         raise ValueError("옮길 업무를 골라 주세요")
     with lock:
         sp, tp = safe_task_path(task_id), safe_task_path(to)
         sfm, _, stext = read_note(sp)
         tfm, _, ttext = read_note(tp)
-        if (sfm.get("project") or "기타") != (tfm.get("project") or "기타"):
-            raise ValueError("같은 프로젝트 안에서만 옮길 수 있어요")
-        n, found = -1, None
+        n, found = -1, {}
         for line in stext.split("\r\n" if "\r\n" in stext else "\n"):
             cm = CHECK_RE.match(line)
             if cm:
                 n += 1
-                if n == idx:
-                    found = (cm.group(4), cm.group(2) != " ")
-                    break
-        if found is None:
+                if n in idxs:
+                    found[n] = (cm.group(4), cm.group(2) != " ")
+        if len(found) != len(idxs) or not idxs:
             raise ValueError("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요")
-        new_t = add_check_line(ttext, found[0], found[1])
-        new_s = edit_check_line(stext, idx, None)
+        new_t, new_s = ttext, stext
+        for i in idxs:  # 받는 쪽에는 원래 순서대로 붙인다
+            new_t = add_check_line(new_t, found[i][0], found[i][1])
+        for i in reversed(idxs):  # 지울 때는 뒤에서부터 (앞 번호가 안 밀리게)
+            new_s = edit_check_line(new_s, i, None)
         tp.write_text(new_t, encoding="utf-8", newline="")  # 받는 쪽을 먼저 써서 중간에 실패해도 할 일이 사라지지 않게
         sp.write_text(new_s, encoding="utf-8", newline="")
     return task_from_file(sp)

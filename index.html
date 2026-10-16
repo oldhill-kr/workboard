@@ -414,6 +414,26 @@ body.has-alert .brand h1::after { content: " 🔔"; }
 .urg-badge { font-size: 12px; }
 .mini.urg { opacity: .35; } .mini.urg.on { opacity: 1; }
 #urgNew { opacity: .5; } #urgNew.on { opacity: 1; background: var(--red-soft); border-color: var(--red); }
+.check.c2 { flex-direction: column; gap: 0; }
+.check.c2 .c-main { display: flex; align-items: flex-start; gap: 6px; }
+.check.c2 .c-main > label { flex: 1; }
+.check.c2 .mini.urg { opacity: .35; align-self: flex-start; margin-top: 1px; width: 26px; flex: none; padding: 2px 0; text-align: center; } .check.c2 .mini.urg.on, .check.c2:hover .mini.urg { opacity: 1; }
+.check.c2 .c-act { display: none; align-items: center; gap: 8px; padding: 2px 0 5px 64px; font-size: 12px; color: var(--sub); }
+.check.c2:hover .c-act, .check.c2:focus-within .c-act, .check.c2.sel .c-act { display: flex; }
+.check.c2.sel { background: var(--accent-soft); }
+.check.c2 .c-act .mini { opacity: 1; padding: 2px 9px; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 12px; color: var(--sub); }
+.check.c2 .c-act .mini.del:hover { color: var(--red); border-color: var(--red); }
+.check.c2 .c-act .msel { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 2px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.check.c2 .c-act .msel input { accent-color: var(--accent); }
+@media (hover: none) { .check.c2 .c-act { display: flex; } }
+.pri-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+.mvpanel { border-left: 1px solid var(--line); padding-left: 14px; }
+.mvpanel .mvlabel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mvrow { display: flex; gap: 6px; align-items: stretch; }
+.mvrow select { flex: 1; min-width: 0; height: 30px; padding: 0 10px; box-sizing: border-box; }
+.mvrow .btn { flex: none; height: 30px; box-sizing: border-box; padding: 0 14px; white-space: nowrap; justify-content: center; } .mvrow .btn[disabled] { opacity: .45; cursor: not-allowed; }
+.mvpanel .mvcount { color: var(--accent); font-weight: 700; } .mvpanel .mvhint { font-size: 11.5px; color: var(--faint); font-weight: 500; margin-left: 4px; }
+@media (max-width: 640px) { .pri-row { grid-template-columns: 1fr; } .mvpanel { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 10px; } }
 .povw { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 0 0 12px; }
 .pov { text-align: left; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--pc); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
 .pov:hover { background: var(--panel-2); }
@@ -1150,6 +1170,7 @@ function renderBody(md) {
   return out.join("");
 }
 function renderDrawer(t) {
+  if (selFor !== t.id || selLen !== t.checks.length) { selMove.clear(); selFor = t.id; selLen = t.checks.length; }  // 다른 업무거나 항목 수가 바뀌면 선택 해제
   const pc = projColor(t.project), chart = isChartCard(t);
   $("#drawer").innerHTML = `
     <div class="d-head"><span class="proj" style="color:${pc}">● ${esc(t.project)}</span>
@@ -1173,17 +1194,16 @@ function renderDrawer(t) {
       <div class="field ${chart ? "work-only" : ""}"><label>마감일 ${t.due ? `<span class="dday ${ddayLabel(t).cls}" style="margin-left:6px">${ddayLabel(t).text}</span>` : ""}</label>
         <div class="row"><input type="date" id="dueInput" value="${esc(t.due || "")}">
           <button class="quick" data-q="0">오늘</button><button class="quick" data-q="1">내일</button><button class="quick" data-q="fri">이번 주 금</button><button class="quick" data-q="mon">다음 주 월</button><button class="quick" data-q="clear">지우기</button></div></div>
-      <div class="field"><label>${chart ? "시장" : "우선순위"}</label><div class="seg" id="segPri">${(chart ? ["한국", "미국"] : ["높음", "보통", "낮음"]).map(p => `<button data-p="${p}" class="${t.priority === p ? "on" : ""}">${p}</button>`).join("")}</div></div>
+      <div class="pri-row"><div class="field"><label>${chart ? "시장" : "우선순위"}</label><div class="seg" id="segPri">${(chart ? ["한국", "미국"] : ["높음", "보통", "낮음"]).map(p => `<button data-p="${p}" class="${t.priority === p ? "on" : ""}">${p}</button>`).join("")}</div></div>
+        <div class="field mvpanel">${movePanelHTML(t)}</div></div>
       <div class="field"><label>할 일 ${t.checks.length ? `${t.checks.filter(c => c.done).length}/${t.checks.length}` : ""}</label>
-        <div class="checks">${t.checks.map((c, i) => movingCheck === i
-          ? `<div class="check editing mv"><span class="ctext" style="flex:1 1 100%">${esc(fromStore(c.text))}</span>
-              <select id="moveSel" style="flex:1;min-width:0">${tasks.filter(x => x.project === t.project && x.id !== t.id).map(x =>
-                `<option value="${esc(x.id)}">${esc(x.title.replace(x.project + " - ", ""))} (${esc(x.status)})</option>`).join("")}</select>
-              <button class="mini" data-mvgo="${i}">여기로 이동</button><button class="mini" data-mvcancel>취소</button></div>`
-          : editingCheck === i
+        <div class="checks">${t.checks.map((c, i) => editingCheck === i
           ? `<div class="check editing"><textarea rows="1" class="ml" id="checkEdit" data-ei="${i}">${esc(fromStore(c.text))}</textarea><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
-          : `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span class="ctext">${esc(fromStore(c.text)) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label>
-              <button class="mini icon urg ${isUrgText(c.text) ? "on" : ""}" data-urg="${i}" title="${isUrgText(c.text) ? "긴급 해제" : "긴급으로 표시"}">🔥</button><button class="mini icon" data-mv="${i}" title="같은 프로젝트의 다른 업무로 옮기기">⇄</button><button class="mini icon" data-edit="${i}" title="고치기">✎</button><button class="mini icon del" data-del="${i}" title="지우기">✕</button></div>`).join("")}</div>
+          : `<div class="check c2 ${c.done ? "done" : ""} ${selMove.has(i) ? "sel" : ""}">
+              <div class="c-main"><button class="mini icon urg ${isUrgText(c.text) ? "on" : ""}" data-urg="${i}" title="${isUrgText(c.text) ? "긴급 해제" : "긴급으로 표시"}">🔥</button>
+                <label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span class="ctext">${esc(fromStore(c.text)) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label></div>
+              <div class="c-act"><label class="msel" title="체크한 항목을 오른쪽 ‘체크항목 이동’에서 다른 업무로 옮겨요"><input type="checkbox" data-msel="${i}" ${selMove.has(i) ? "checked" : ""}> 이동</label>
+                <button class="mini" data-edit="${i}" title="고치기">✎ 수정</button><button class="mini del" data-del="${i}" title="지우기">✕ 삭제</button></div></div>`).join("")}</div>
         <div class="logrow" style="margin-top:6px"><textarea rows="1" class="ml" id="checkInput" placeholder="${TOUCH ? "＋ 할 일 추가" : "＋ 할 일 추가 (Enter 저장 · Shift+Enter 줄바꿈)"}"></textarea><button class="btn" id="urgNew" type="button" title="긴급으로 추가">🔥</button><button class="btn" id="checkBtn">추가</button></div></div>
       <div class="field"><label>기록 추가 <span style="color:var(--faint);font-weight:400">(진행 기록은 오늘 날짜가 자동으로 붙어요)</span></label>
         <div class="logrow"><select id="noteSection" style="flex:none">${noteSectionNames(t.body).map(n => `<option ${n === lastNoteSection ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
@@ -1197,7 +1217,16 @@ function renderDrawer(t) {
 function fromStore(s) { return String(s || "").replace(/<br\s*\/?>/gi, "\n"); }
 function autoGrow(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 220) + "px"; }
 document.addEventListener("input", e => { if (e.target.classList && e.target.classList.contains("ml")) autoGrow(e.target); });
-let movingCheck = null;
+/* 체크항목 이동: 할 일 아래의 '이동'을 체크 → 우선순위 오른쪽 패널에서 받을 프로젝트·업무를 골라 한꺼번에 이동 */
+let selMove = new Set(), selFor = null, selLen = -1, mvTask = "";
+function movePanelHTML(t) {
+  const n = selMove.size;
+  const targets = tasks.filter(x => x.project === t.project && x.id !== t.id);  // 같은 프로젝트 안의 다른 노트
+  const tgt = targets.some(x => x.id === mvTask) ? mvTask : (targets[0] ? targets[0].id : "");
+  return `<label class="mvlabel">체크항목 이동 ${n ? `<span class="mvcount">· ${n}개 선택</span>` : `<span class="mvhint">할 일 아래 ‘이동’을 체크하세요</span>`}</label>
+    <div class="mvrow"><select id="mvTask">${targets.map(x => `<option value="${esc(x.id)}" ${x.id === tgt ? "selected" : ""}>${esc(x.title.replace(x.project + " - ", ""))} (${esc(x.status)})</option>`).join("") || `<option value="">옮겨 갈 업무가 없어요</option>`}</select>
+      <button class="btn primary" id="mvGo" type="button" ${n && tgt ? "" : "disabled"}>${n ? `${n}개 이동` : "이동"}</button></div>`;
+}
 let editingCheck = null, editingNote = null, editingTitle = false, lastNoteSection = "진행 기록";
 function shortTitle(t) { const p = t.project + " - "; return t.title.startsWith(p) ? t.title.slice(p.length) : t.title; }
 
@@ -1261,7 +1290,7 @@ function redrawDrawer(t) {
 }
 function openDrawer(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
-  current = id; editingCheck = null; editingNote = null; editingTitle = false; movingCheck = null; renderDrawer(t);
+  current = id; editingCheck = null; editingNote = null; editingTitle = false; selMove.clear(); renderDrawer(t);
   $("#drawer").classList.add("on"); $("#scrim").classList.add("on"); $("#drawer").setAttribute("aria-hidden", "false");
 }
 function closeDrawer() { current = null; $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); $("#drawer").setAttribute("aria-hidden", "true"); }
@@ -2142,20 +2171,14 @@ document.addEventListener("click", async e => {
       toast("기록을 지웠어요"); return;
     }
     if (e.target.id === "checkBtn") addCheck();
-    const mvb = e.target.closest("[data-mv]");
-    if (mvb) {
-      if (!tasks.some(x => x.project === t.project && x.id !== t.id)) { toast("이 프로젝트에 옮겨 갈 다른 업무가 없어요"); return; }
-      movingCheck = Number(mvb.dataset.mv); editingCheck = null; redrawDrawer(t); return;
-    }
-    if (e.target.closest("[data-mvcancel]")) { movingCheck = null; redrawDrawer(t); return; }
-    const mvg = e.target.closest("[data-mvgo]");
-    if (mvg) {
-      const to = $("#moveSel")?.value, dest = tasks.find(x => x.id === to);
-      if (!dest) return toast("옮길 업무를 골라 주세요");
-      movingCheck = null;
-      await update({ id: t.id, move_check: { idx: Number(mvg.dataset.mvgo), to } });
+    if (e.target.id === "mvGo") {
+      const to = $("#mvTask")?.value, dest = tasks.find(x => x.id === to);
+      if (!dest || !selMove.size) return toast("옮길 항목과 받을 업무를 골라 주세요");
+      const idxs = [...selMove].sort((a, b) => a - b), n = idxs.length;
+      selMove.clear();
+      await api("/api/task/update", { id: t.id, move_check: { idxs, to } });
       await loadTasks();  // 받는 업무도 갱신
-      toast(`'${dest.title.replace(dest.project + " - ", "")}'(으)로 옮겼어요`); return;
+      toast(`${n}개를 '${dest.title.replace(dest.project + " - ", "")}'(으)로 옮겼어요`); return;
     }
     const ed = e.target.closest("[data-edit]");
     if (ed) { editingCheck = Number(ed.dataset.edit); $("#checkEdit")?.remove(); redrawDrawer(t); const inp = $("#checkEdit"); inp.focus(); inp.select(); }
@@ -2184,6 +2207,12 @@ document.addEventListener("change", async e => {
       await loadTasks(); toast(`'${name}' 프로젝트로 옮겼어요`);
     }
     if (e.target.dataset.ci !== undefined) await update({ id: current, toggle_check: Number(e.target.dataset.ci) });
+    if (e.target.dataset.msel !== undefined) {
+      const i = Number(e.target.dataset.msel);
+      if (e.target.checked) selMove.add(i); else selMove.delete(i);
+      const tt = tasks.find(x => x.id === current); if (tt) redrawDrawer(tt);
+    }
+    if (e.target.id === "mvTask") mvTask = e.target.value;
   } catch (err) { toast(err.message); }
 });
 const TOUCH = matchMedia("(pointer: coarse)").matches;  // 폰·태블릿: Enter는 줄바꿈, 저장은 버튼
@@ -2435,7 +2464,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-16.1";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-16.4";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();

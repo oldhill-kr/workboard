@@ -218,19 +218,22 @@
     return dest.slice(TASK_DIR.length + 1);
   }
   async function moveCheck(id, mv) {
-    const idx = Number(mv.idx), to = (mv.to || "").trim();
+    const idxs = [...new Set((mv.idxs != null ? mv.idxs : [mv.idx]).map(Number))].sort((a, b) => a - b), to = (mv.to || "").trim();
     if (!to || to === id) fail("옮길 업무를 골라 주세요");
     const sp = taskPath(id), tp = taskPath(to);
     const stext = norm(cache.get(sp).text), ttext = norm(cache.get(tp).text);
-    if ((readNote(stext).fm.project || "기타") !== (readNote(ttext).fm.project || "기타")) fail("같은 프로젝트 안에서만 옮길 수 있어요");
-    let n = -1, found = null;
+    let n = -1;
+    const found = {};
     for (const line of stext.split("\n")) {
       const cm = CHECK_RE.exec(line);
-      if (cm) { n++; if (n === idx) { found = { text: cm[4], done: cm[2] !== " " }; break; } }
+      if (cm) { n++; if (idxs.includes(n)) found[n] = { text: cm[4], done: cm[2] !== " " }; }
     }
-    if (!found) fail("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
-    await putNote(tp, addCheckLine(ttext, found.text, found.done));  // 받는 쪽을 먼저 저장
-    const ns = editCheckLine(stext, idx, null);
+    if (!idxs.length || Object.keys(found).length !== idxs.length) fail("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
+    let nt = ttext;
+    for (const i of idxs) nt = addCheckLine(nt, found[i].text, found[i].done);  // 원래 순서대로 붙인다
+    await putNote(tp, nt);  // 받는 쪽을 먼저 저장
+    let ns = stext;
+    for (const i of [...idxs].reverse()) ns = editCheckLine(ns, i, null);  // 뒤에서부터 지운다
     await putNote(sp, ns);
     return { task: taskFromNote(id, ns, cache.get(sp).mtime) };
   }
