@@ -416,14 +416,11 @@ def update_task(data):
         if "status" in data:
             if data["status"] not in STATUSES:
                 raise ValueError("잘못된 상태")
-            old = read_note(p)[0].get("status")
             text = set_frontmatter(text, "status", data["status"])
             if data["status"] == "완료":
                 text = set_frontmatter(text, "completed", date.today().isoformat())
             else:
                 text = remove_frontmatter(text, "completed")
-            if old != data["status"]:
-                text = append_log(text, f"상태 {old} → {data['status']}")
         if "due" in data:
             due = data["due"] or ""
             if due and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due):
@@ -666,7 +663,6 @@ def create_task(data):
     check_lines = "\n".join(f"- [ ] {c}" for c in checks) or ("" if chart else "- [ ] ")
     rec = (data.get("recurring") or "").strip()  # 정기 업무 규칙이 만든 노트는 규칙 id를 머리말에 남긴다
     rec_line = f"recurring: {rec}\n" if rec else ""
-    how = "정기 업무" if rec else ("차트보드" if chart else "업무보드")
     board_line = f"board: {CHART_BOARD}\n" + (f"themes: [{', '.join(themes)}]\n" if len(themes) > 1 else "") if chart else ""
     symbol = re.sub(r"[^0-9A-Za-z.\-]", "", str(data.get("symbol") or ""))
     symbol_line = f"symbol: {symbol}\n" if symbol else ""
@@ -689,7 +685,6 @@ created: {today}
 {check_lines}
 
 ## 진행 기록
-- {today}: 등록 ({how})
 """,
         encoding="utf-8",
     )
@@ -774,11 +769,9 @@ def upsert_chart_scout(data):
             if data["checked"] and old != "완료":
                 text = set_frontmatter(text, "status", "완료")
                 text = set_frontmatter(text, "completed", date.today().isoformat())
-                text = append_log(text, "차트 분석 완료 체크 (척후 보고)")
             elif not data["checked"] and old == "완료":
                 text = set_frontmatter(text, "status", "할일")
                 text = remove_frontmatter(text, "completed")
-                text = append_log(text, "차트 분석 체크 해제")
         if "memo" in data:
             memo = str(data.get("memo") or "").strip()
             text = _set_section_bullets(text, VIEW_SECTION, [memo] if memo else [])

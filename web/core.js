@@ -256,10 +256,8 @@
     let text = norm(cache.get(path).text);
     if ("status" in data) {
       if (!STATUSES.includes(data.status)) fail("잘못된 상태");
-      const old = readNote(text).fm.status;
       text = setFrontmatter(text, "status", data.status);
       text = data.status === "완료" ? setFrontmatter(text, "completed", todayISO()) : removeFrontmatter(text, "completed");
-      if (old !== data.status) text = appendLog(text, `상태 ${old} → ${data.status}`);
     }
     if ("due" in data) {
       const due = data.due || "";
@@ -346,7 +344,6 @@ ${rec ? `recurring: ${rec}\n` : ""}tags: ${chart ? "[work, 차트]" : "[work, �
 ${checkLines}
 
 ## 진행 기록
-- ${today}: 등록 (${rec ? "정기 업무" : chart ? "차트보드" : "업무보드"})
 `;
     await putNote(`${TASK_DIR}/${fname}`, text);
     return { task: taskFromNote(fname, text, cache.get(`${TASK_DIR}/${fname}`).mtime) };
