@@ -95,6 +95,16 @@
     }
     fail("그 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
   }
+  function reorderCheckLine(text, frm, to) {
+    const lines = text.split("\n"), pos = [];
+    lines.forEach((l, i) => { if (CHECK_RE.test(l)) pos.push(i); });
+    if (!(frm >= 0 && frm < pos.length && to >= 0 && to < pos.length)) fail("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요");
+    if (frm === to) return text;
+    const items = pos.map(p => lines[p]);
+    items.splice(to, 0, items.splice(frm, 1)[0]);
+    pos.forEach((p, k) => { lines[p] = items[k]; });
+    return lines.join("\n");
+  }
   function editCheckLine(text, idx, newText) {
     let n = -1, found = false;
     const out = [];
@@ -268,6 +278,7 @@
         return n === idx ? cm[1] + (cm[2] !== " " ? " " : "x") + cm[3] + cm[4] : line;
       }).join("\n");
     }
+    if (data.reorder_check != null) text = reorderCheckLine(text, Number(data.reorder_check.from), Number(data.reorder_check.to));
     if ("delete_check" in data) text = editCheckLine(text, Number(data.delete_check), null);
     if ("edit_check" in data) {
       const nt = (data.text || "").trim();

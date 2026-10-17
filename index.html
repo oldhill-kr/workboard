@@ -416,9 +416,14 @@ body.has-alert .brand h1::after { content: " 🔔"; }
 #urgNew { opacity: .5; } #urgNew.on { opacity: 1; background: var(--red-soft); border-color: var(--red); }
 .check.c2 { flex-direction: column; gap: 0; }
 .check.c2 .c-main { display: flex; align-items: flex-start; gap: 6px; }
+.grip { flex: none; width: 14px; margin-top: 2px; text-align: center; font-size: 15px; line-height: 1.3; color: var(--faint); cursor: grab; opacity: 0; user-select: none; touch-action: none; }
+.check.c2:hover .grip, .check.c2.sel .grip, body.is-dragging .grip { opacity: .75; } .grip:hover { color: var(--text); }
+.check.c2.dragging { opacity: .45; } body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none; }
+.check.drop-above { box-shadow: inset 0 3px 0 var(--accent); } .check.drop-below { box-shadow: inset 0 -3px 0 var(--accent); }
+@media (hover: none) { .check.c2 .grip { opacity: .6; } }
 .check.c2 .c-main > label { flex: 1; }
 .check.c2 .mini.urg { opacity: .35; align-self: flex-start; margin-top: 1px; width: 26px; flex: none; padding: 2px 0; text-align: center; } .check.c2 .mini.urg.on, .check.c2:hover .mini.urg { opacity: 1; }
-.check.c2 .c-act { display: none; align-items: center; gap: 8px; padding: 2px 0 5px 64px; font-size: 12px; color: var(--sub); }
+.check.c2 .c-act { display: none; align-items: center; gap: 8px; padding: 2px 0 5px 84px; font-size: 12px; color: var(--sub); }
 .check.c2:hover .c-act, .check.c2:focus-within .c-act, .check.c2.sel .c-act { display: flex; }
 .check.c2.sel { background: var(--accent-soft); }
 .check.c2 .c-act .mini { opacity: 1; padding: 2px 9px; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 12px; color: var(--sub); }
@@ -1200,7 +1205,7 @@ function renderDrawer(t) {
         <div class="checks">${t.checks.map((c, i) => editingCheck === i
           ? `<div class="check editing"><textarea rows="1" class="ml" id="checkEdit" data-ei="${i}">${esc(fromStore(c.text))}</textarea><button class="mini" data-save="${i}">저장</button><button class="mini" data-cancel>취소</button></div>`
           : `<div class="check c2 ${c.done ? "done" : ""} ${selMove.has(i) ? "sel" : ""}">
-              <div class="c-main"><button class="mini icon urg ${isUrgText(c.text) ? "on" : ""}" data-urg="${i}" title="${isUrgText(c.text) ? "긴급 해제" : "긴급으로 표시"}">🔥</button>
+              <div class="c-main"><span class="grip" data-grip="${i}" title="끌어서 순서 바꾸기">⠿</span><button class="mini icon urg ${isUrgText(c.text) ? "on" : ""}" data-urg="${i}" title="${isUrgText(c.text) ? "긴급 해제" : "긴급으로 표시"}">🔥</button>
                 <label><input type="checkbox" data-ci="${i}" ${c.done ? "checked" : ""}><span class="ctext">${esc(fromStore(c.text)) || `<i style="color:var(--faint)">(빈 항목)</i>`}</span></label></div>
               <div class="c-act"><label class="msel" title="체크한 항목을 오른쪽 ‘체크항목 이동’에서 다른 업무로 옮겨요"><input type="checkbox" data-msel="${i}" ${selMove.has(i) ? "checked" : ""}> 이동</label>
                 <button class="mini" data-edit="${i}" title="고치기">✎ 수정</button><button class="mini del" data-del="${i}" title="지우기">✕ 삭제</button></div></div>`).join("")}</div>
@@ -1217,6 +1222,39 @@ function renderDrawer(t) {
 function fromStore(s) { return String(s || "").replace(/<br\s*\/?>/gi, "\n"); }
 function autoGrow(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 220) + "px"; }
 document.addEventListener("input", e => { if (e.target.classList && e.target.classList.contains("ml")) autoGrow(e.target); });
+/* 할 일 순서 바꾸기: 왼쪽 손잡이(⠿)를 끌어서 놓는다 (마우스·터치 공통) */
+let dragState = null;
+document.addEventListener("pointerdown", e => {
+  const g = e.target.closest && e.target.closest("[data-grip]");
+  if (!g || e.button > 0) return;
+  const list = g.closest(".checks"); if (!list) return;
+  const rows = [...list.children], row = g.closest(".check");
+  e.preventDefault();
+  dragState = { from: rows.indexOf(row), to: rows.indexOf(row), row, rows, list, pid: e.pointerId };
+  row.classList.add("dragging"); document.body.classList.add("is-dragging");
+  try { g.setPointerCapture(e.pointerId); } catch (x) {}
+});
+document.addEventListener("pointermove", e => {
+  const d = dragState; if (!d) return;
+  const others = d.rows.filter(r => r !== d.row);
+  let to = 0;
+  for (const r of others) { const b = r.getBoundingClientRect(); if (e.clientY > b.top + b.height / 2) to++; }
+  d.to = to;
+  d.rows.forEach(r => r.classList.remove("drop-above", "drop-below"));
+  if (to < others.length) others[to].classList.add("drop-above"); else if (others.length) others[others.length - 1].classList.add("drop-below");
+  const box = d.list.closest(".d-body");  // 가장자리에 가면 자동 스크롤
+  if (box) { const b = box.getBoundingClientRect(); if (e.clientY < b.top + 40) box.scrollTop -= 12; else if (e.clientY > b.bottom - 40) box.scrollTop += 12; }
+});
+async function endDrag(e, cancel) {
+  const d = dragState; if (!d) return; dragState = null;
+  d.rows.forEach(r => r.classList.remove("drop-above", "drop-below", "dragging")); document.body.classList.remove("is-dragging");
+  if (cancel || d.to === d.from || !current) return;
+  selMove.clear();
+  try { await update({ id: current, reorder_check: { from: d.from, to: d.to } }); } catch (err) { toast(err.message); }
+}
+document.addEventListener("pointerup", e => endDrag(e, false));
+document.addEventListener("pointercancel", e => endDrag(e, true));
+
 /* 체크항목 이동: 할 일 아래의 '이동'을 체크 → 우선순위 오른쪽 패널에서 받을 프로젝트·업무를 골라 한꺼번에 이동 */
 let selMove = new Set(), selFor = null, selLen = -1, mvTask = "";
 function movePanelHTML(t) {
@@ -2464,7 +2502,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-16.4";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-17.1";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();

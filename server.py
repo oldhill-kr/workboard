@@ -276,6 +276,22 @@ def edit_note_line(text, section, idx, new_text):
     raise ValueError("그 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요")
 
 
+def reorder_check_line(text, frm, to):
+    """frm번째 체크박스 줄을 to번째 자리로 옮긴다 (체크 줄끼리만 자리를 바꾸고, 그 사이의 다른 줄은 그대로)."""
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    pos = [i for i, l in enumerate(lines) if CHECK_RE.match(l)]
+    if not (0 <= frm < len(pos) and 0 <= to < len(pos)):
+        raise ValueError("할 일 항목을 찾지 못했어요. 새로고침 후 다시 해 주세요")
+    if frm == to:
+        return text
+    items = [lines[p] for p in pos]
+    items.insert(to, items.pop(frm))
+    for p, l in zip(pos, items):
+        lines[p] = l
+    return nl.join(lines)
+
+
 def edit_check_line(text, idx, new_text):
     """idx번째 체크박스 줄을 고친다. new_text가 None이면 줄을 지운다."""
     nl = "\r\n" if "\r\n" in text else "\n"
@@ -430,6 +446,9 @@ def update_task(data):
                         line = cm.group(1) + mark + cm.group(3) + cm.group(4)
                 out.append(line)
             text = nl.join(out)
+        if data.get("reorder_check") is not None:
+            rc = data["reorder_check"]
+            text = reorder_check_line(text, int(rc["from"]), int(rc["to"]))
         if "delete_check" in data:
             text = edit_check_line(text, int(data["delete_check"]), None)
         if "edit_check" in data:
