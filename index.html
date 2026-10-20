@@ -355,8 +355,8 @@ textarea { width: 100%; resize: vertical; }
 .check:hover { background: var(--panel-2); }
 .check input { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--green); }
 .check.nline { align-items: flex-start; }
-.check .ntext { flex: 1; color: var(--sub); padding: 2px 0 2px 12px; position: relative; white-space: pre-wrap; word-break: break-word; }
-.check .ntext::before { content: "·"; position: absolute; left: 2px; }
+.check .ntext { flex: 1; color: var(--text); font-weight: 500; padding: 2px 0 2px 12px; position: relative; white-space: pre-wrap; word-break: break-word; }
+.check .ntext::before { content: "·"; position: absolute; left: 2px; color: var(--text); font-weight: 800; }
 .check.done span { text-decoration: line-through; color: var(--faint); }
 .logrow { display: flex; gap: 6px; }
 .logrow input, .logrow textarea { flex: 1; }
@@ -364,8 +364,8 @@ textarea.ml { resize: none; min-height: 34px; max-height: 220px; line-height: 1.
 .check.editing textarea.ml { flex: 1; }
 .check .ctext { white-space: pre-wrap; word-break: break-word; }
 .logrow { align-items: flex-start; }
-.note { font-size: 13px; line-height: 1.6; color: var(--sub); border-top: 1px solid var(--line); padding-top: 12px; }
-.note h4 { color: var(--text); font-size: 13px; margin: 12px 0 4px; }
+.note { font-size: 13.5px; line-height: 1.6; color: var(--text); border-top: 1px solid var(--line); padding-top: 12px; }
+.note h4 { color: var(--text); font-size: 13.5px; font-weight: 800; margin: 14px 0 4px; }
 .note p { margin: 2px 0; }
 .note .li { padding-left: 14px; position: relative; } .note .li::before { content: "·"; position: absolute; left: 4px; }
 .d-foot { padding: 12px 20px; border-top: 1px solid var(--line); display: flex; gap: 8px; }
@@ -2502,7 +2502,7 @@ function afterBoot() {
   STATIC_MODE = await detectStatic();
   if (STATIC_MODE) {
     try {
-      const WEB_BUILD = "2026-10-17.2";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
+      const WEB_BUILD = "2026-10-20.1";  // web/*.js를 고칠 때마다 올려 두면 브라우저에 남은 옛 파일 대신 새 파일을 받는다
       for (const f of ["web/config.js", "web/holidays.js", "web/core.js", "web/adapters.js"]) await loadScript(`${f}?v=${WEB_BUILD}`);
     } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ ${esc(e.message)}</div>`; return; }
     await loadHolidays();
