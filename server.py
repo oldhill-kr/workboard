@@ -95,8 +95,8 @@ def dbq_search(qs):
     db = (qs.get("db") or [""])[0] or None
     try:
         top = max(1, min(int((qs.get("top") or [8])[0]), 20))
-        show = max(0, min(int((qs.get("show") or [0])[0]), 5))
-        r = _dbq_module(proj).run_search(q, top, show, 8000, db)
+        show = max(0, min(int((qs.get("show") or [0])[0]), 20))
+        r = _dbq_module(proj).run_search(q, top, show, 30000, db)
         r["enabled"] = True
         return r
     except SystemExit as e:  # search.py가 schema 폴더 없음·DB 없음 등으로 종료하려 할 때

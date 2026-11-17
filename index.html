@@ -2585,11 +2585,11 @@ async function dbqGet(qs) {
     if (!q) return;
     out.innerHTML = "<p>찾는 중…</p>";
     try {
-      const r = await dbqGet("?top=10&show=3&project=" + encodeURIComponent(pSel.value) + "&db=" + encodeURIComponent(dSel.value) + "&q=" + encodeURIComponent(q));
+      const r = await dbqGet("?top=10&show=10&project=" + encodeURIComponent(pSel.value) + "&db=" + encodeURIComponent(dSel.value) + "&q=" + encodeURIComponent(q));
       if (!r.enabled) { out.innerHTML = "<p>⚠ DB 검색 서버에 연결할 수 없어요. DB검색API.bat 을 켜 주세요.</p>"; return; }
       if (r.error) { out.innerHTML = `<p>⚠ ${esc(r.error)}</p>`; return; }
       const gl = (r.glossary || []).map(g => `<p>📖 ${esc(g)}</p>`).join("");
-      const items = (r.results || []).map(x => `<details ${x.content ? "open" : ""}><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점 ${x.desc ? "· " + esc(x.desc) : ""}</span></summary>`
+      const items = (r.results || []).map((x, i) => `<details ${x.content && i < 2 ? "open" : ""}><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점 ${x.desc ? "· " + esc(x.desc) : ""}</span></summary>`
         + (x.content ? `<pre>${esc(x.content)}</pre>` : `<p class="sub">${esc(x.file)}</p>`) + `</details>`).join("");
       out.innerHTML = gl + (items || "<p>관련 객체를 찾지 못했어요. 다른 표현으로 다시 검색해 보세요.</p>")
         + `<p class="sub">※ 관련 객체를 찾아 보여주는 기능이에요. 문장으로 된 설명이 필요하면 Claude Code에서 같은 질문을 하세요.</p>`;
