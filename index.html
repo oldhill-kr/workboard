@@ -161,6 +161,10 @@ body[data-mode="work"] .tabs button[data-view="routine"] { display: none; }
 .re-grid input { width: 84px; height: 36px; text-align: center; }
 
 body[data-view="growth"] .filters, body[data-view="growth"] #projSummary { display: none; }
+body[data-view="dbq"] .filters, body[data-view="dbq"] #projSummary { display: none; }
+#dbqOut details { border: 1px solid var(--line, #8884); border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
+#dbqOut summary { cursor: pointer; font-weight: 600; }
+#dbqOut pre { white-space: pre-wrap; max-height: 420px; overflow: auto; font-size: 12px; }
 .g-wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 .g-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .g-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -565,6 +569,7 @@ a.iss:hover { border-color: var(--accent); }
     <button data-view="board" class="on">🗂 카드</button>
     <button data-view="calendar">📅 달력</button>
     <button data-view="growth">🌱 성장</button>
+    <button data-view="dbq" id="dbqTab" hidden>🗄 DB</button>
   </div>
   <button class="btn primary" id="newBtn">＋ 새 업무</button>
   <button class="btn icon" id="themeBtn" title="다크/라이트 모드 전환">🌙</button>
@@ -580,6 +585,9 @@ a.iss:hover { border-color: var(--accent); }
   <section class="view on" id="view-board"><div id="projSummary"></div><div class="board" id="board"></div></section>
   <section class="view" id="view-routine"><div id="routine"></div></section>
   <section class="view" id="view-growth"><div id="growth"></div></section>
+  <section class="view" id="view-dbq"><div class="g-wrap"><section class="g-card"><h3>🗄 DB 질의 <span class="sub">추출해 둔 스키마(테이블·프로시저)에서 관련 객체를 찾아요 · DB에는 접속하지 않아요</span></h3>
+    <form id="dbqForm" style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap"><select id="dbqProj" title="프로젝트"></select><select id="dbqDb" title="DB"></select><input id="dbqQ" type="search" placeholder="예: 포장 데이터는 어떤 프로시저가 만들어?" style="flex:1" autocomplete="off"><button class="btn primary" type="submit">검색</button></form>
+    <div id="dbqOut"></div></section></div></section>
   <section class="view" id="view-calendar">
     <div class="cal-wrap">
       <div class="cal-box">
@@ -2537,6 +2545,45 @@ function afterBoot() {
   }
   try { await loadConfig(); await loadTasks(); } catch (e) { $("#notice").innerHTML = `<div class="notice err">⚠ 서버에 연결할 수 없어요. 업무보드 실행.bat을 다시 실행해 주세요. (${esc(e.message)})</div>`; return; }
   afterBoot();
+})();
+
+// ---------- DB 질의 (config.json에 dbq_root 설정 시에만 탭이 보임) ----------
+let dbqProjects = {};
+(async () => {
+  try {
+    const r = await (await fetch("/api/dbq")).json();
+    if (!r.enabled) return;
+    dbqProjects = r.projects || {};
+    $("#dbqTab").hidden = false;
+  } catch (e) { return; }
+  const pSel = $("#dbqProj"), dSel = $("#dbqDb");
+  const saved = (() => { try { return JSON.parse(localStorage.getItem("wb.dbq") || "{}"); } catch (e) { return {}; } })();
+  const fillDb = () => {
+    const dbs = dbqProjects[pSel.value] || [];
+    dSel.innerHTML = `<option value="">전체 DB</option>` + dbs.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+    if (saved.db && saved.proj === pSel.value && dbs.includes(saved.db)) dSel.value = saved.db;
+  };
+  pSel.innerHTML = Object.keys(dbqProjects).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
+  if (saved.proj && dbqProjects[saved.proj]) pSel.value = saved.proj;
+  fillDb();
+  pSel.addEventListener("change", () => { saved.db = ""; fillDb(); });
+  const keep = () => { try { localStorage.setItem("wb.dbq", JSON.stringify({ proj: pSel.value, db: dSel.value })); } catch (e) {} };
+  pSel.addEventListener("change", keep); dSel.addEventListener("change", keep);
+  $("#dbqForm").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const q = $("#dbqQ").value.trim(), out = $("#dbqOut");
+    if (!q) return;
+    out.innerHTML = "<p>찾는 중…</p>";
+    try {
+      const r = await (await fetch("/api/dbq?top=10&show=3&project=" + encodeURIComponent(pSel.value) + "&db=" + encodeURIComponent(dSel.value) + "&q=" + encodeURIComponent(q))).json();
+      if (r.error) { out.innerHTML = `<p>⚠ ${esc(r.error)}</p>`; return; }
+      const gl = (r.glossary || []).map(g => `<p>📖 ${esc(g)}</p>`).join("");
+      const items = (r.results || []).map(x => `<details ${x.content ? "open" : ""}><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점 ${x.desc ? "· " + esc(x.desc) : ""}</span></summary>`
+        + (x.content ? `<pre>${esc(x.content)}</pre>` : `<p class="sub">${esc(x.file)}</p>`) + `</details>`).join("");
+      out.innerHTML = gl + (items || "<p>관련 객체를 찾지 못했어요. 다른 표현으로 다시 검색해 보세요.</p>")
+        + `<p class="sub">※ 관련 객체를 찾아 보여주는 기능이에요. 문장으로 된 설명이 필요하면 Claude Code에서 같은 질문을 하세요.</p>`;
+    } catch (e) { out.innerHTML = `<p>⚠ ${esc(e.message)}</p>`; }
+  });
 })();
 </script>
 </body>

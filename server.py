@@ -52,6 +52,57 @@ def save_config(cfg):
     CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+_dbq_mods = {}
+
+
+def _dbq_module(name):
+    """config.json의 dbq_root 아래 '프로젝트 폴더'(search.py가 있는 폴더)의 검색 모듈을 불러온다."""
+    root = load_config().get("dbq_root")
+    if not root or not name or "/" in name or "\\" in name or name.startswith("."):
+        return None
+    p = Path(root) / name / "search.py"
+    if not p.exists():
+        return None
+    if name not in _dbq_mods:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("dbq_search_" + str(len(_dbq_mods)), p)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        _dbq_mods[name] = m
+    return _dbq_mods[name]
+
+
+def dbq_search(qs):
+    """프로젝트별로 추출해 둔 DB 스키마에서 관련 객체를 찾는다. DB에는 접속하지 않는다."""
+    root = load_config().get("dbq_root")
+    if not root or not Path(root).is_dir():
+        return {"enabled": False}
+    projects = {}
+    for d in sorted(Path(root).iterdir()):
+        if (d / "search.py").exists():
+            try:
+                projects[d.name] = _dbq_module(d.name).list_dbs()
+            except Exception:
+                projects[d.name] = []
+    if not projects:
+        return {"enabled": False}
+    q = ((qs.get("q") or [""])[0]).strip()[:200]
+    if not q:
+        return {"enabled": True, "projects": projects}
+    proj = (qs.get("project") or [""])[0]
+    if proj not in projects:
+        return {"enabled": True, "projects": projects, "error": "프로젝트를 선택하세요"}
+    db = (qs.get("db") or [""])[0] or None
+    try:
+        top = max(1, min(int((qs.get("top") or [8])[0]), 20))
+        show = max(0, min(int((qs.get("show") or [0])[0]), 5))
+        r = _dbq_module(proj).run_search(q, top, show, 8000, db)
+        r["enabled"] = True
+        return r
+    except SystemExit as e:  # search.py가 schema 폴더 없음·DB 없음 등으로 종료하려 할 때
+        return {"enabled": True, "projects": projects, "error": str(e) or "스키마가 없어요"}
+
+
 def tasks_dir():
     return Path(load_config()["work_dir"]) / "업무"
 
@@ -1855,6 +1906,8 @@ class Handler(BaseHTTPRequestHandler):
                                        "theme": ", ".join(x for x in t["themes"] if x != "미분류"), "memo": _memo_of(t)}
                          for t in list_tasks(charts=True) if t["board"] == CHART_BOARD and t["symbol"]}
                 self.send_json({"cards": cards})
+            elif u.path == "/api/dbq":  # DB 스키마 질의(별도 폴더의 search.py 사용, config.json의 dbq_dir 설정 시에만)
+                self.send_json(dbq_search(parse_qs(u.query)))
             elif u.path == "/api/config":
                 cfg = load_config()
                 self.send_json({"ics_count": len(cfg["ics_urls"]), "work_dir": cfg["work_dir"], "alarms": cfg.get("alarms", {}),
