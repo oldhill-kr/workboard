@@ -319,6 +319,10 @@ main { padding: 14px 24px 24px; }
 .pri-mark { flex: none; font-size: 9px; line-height: 1; }
 .pri-mark.hi { color: var(--red); } .pri-mark.lo { color: var(--faint); }
 .fc-event.task.done { opacity: .55; text-decoration: line-through; }
+.fc-event.created { background: transparent; border: 1px dotted var(--line); border-left: 3px dotted var(--pc); color: var(--sub); cursor: pointer; }
+.fc-event.created .fc-event-main { color: var(--sub); }
+.fc-event.created.done { opacity: .55; }
+.ev-task .cr { flex: none; font-size: 11px; line-height: 1; }
 .ev-task { display: flex; gap: 5px; align-items: center; padding: 1px 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .ev-task .box { width: 10px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; flex: none; opacity: .7; }
 
@@ -597,6 +601,7 @@ a.iss:hover { border-color: var(--accent); }
           <span><i style="border:1.5px solid var(--sub)"></i>업무 마감 (끌어서 마감일 변경)</span>
           <span><i style="border:1.5px dashed var(--sub)"></i>마감 미정 (등록일에 표시)</span>
           <span><i style="background:var(--red-soft);border:1.5px solid var(--red)"></i>지연</span>
+          <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="createdToggle"> 🌱 최초 작성일 표시</label>
           <span><b style="color:var(--red);font-size:10px">▲</b> <b>우선순위 높음 (굵게)</b></span>
           <span><span style="color:var(--faint);font-size:10px">▽</span> <span style="color:var(--sub)">낮음 (흐리게)</span></span>
         </div>
@@ -615,7 +620,9 @@ a.iss:hover { border-color: var(--accent); }
     <div class="field"><label id="lblTitle">업무 이름</label><input type="text" name="title" required placeholder="예: 전장반 USB 케이블 교체"></div>
     <div class="field"><label id="lblProject">프로젝트</label><input type="text" name="project" list="projList" placeholder="예: KC"><datalist id="projList"></datalist></div>
     <div class="field chart-only"><label>종목 코드 <span style="color:var(--faint);font-weight:400">(척후 보고와 같은 코드면 한 카드로 이어져요)</span></label><input type="text" name="symbol" placeholder="예: 005380 · NVDA"></div>
-    <div class="field work-only"><label>마감일</label>
+    <div class="field work-only"><label>시작일 <span style="color:var(--faint);font-weight:400">(선택 · 정하면 달력에 시작일~끝날짜가 한 줄로 이어져요)</span></label>
+      <div class="row"><input type="date" name="start" id="newStart"></div></div>
+    <div class="field work-only"><label>마감일 · 끝날짜</label>
       <div class="row"><input type="date" name="due" id="newDue">
         <button type="button" class="quick" data-q="0">오늘</button><button type="button" class="quick" data-q="1">내일</button>
         <button type="button" class="quick" data-q="fri">이번 주 금</button><button type="button" class="quick" data-q="mon">다음 주 월</button></div></div>
@@ -1117,7 +1124,13 @@ function renderNotice(errors = []) {
 }
 
 /* ---- 달력 ---- */
+// 시작일이 마감일보다 이르면 시작일~마감일(포함)을 한 줄 막대로 그린다. 그 밖에는 하루짜리.
+const isRange = t => !!(t.start && t.due && t.start < t.due);
+const calStart = t => isRange(t) ? t.start : (t.due || t.start || t.created);
+const calEnd = t => isRange(t) ? addDays(t.due, 1) : undefined;  // FullCalendar의 end는 그 날을 포함하지 않는다
+const showCreated = () => { try { return localStorage.getItem("wb.created") !== "0"; } catch (e) { return true; } };  // 🌱 최초 작성일 표시(기본 켬)
 function initCalendar() {
+  $("#createdToggle").checked = showCreated();
   calendar = new FullCalendar.Calendar($("#calendar"), {
     eventOrder: (a, b) => {  // 같은 날 안에서는 우선순위 높은 업무가 위로
       const r = e => { const x = e.extendedProps || e; return x.kind === "task" ? (x.priRank < 0 ? 1 : x.priRank) : 1.5; };
@@ -1127,10 +1140,23 @@ function initCalendar() {
     headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listWeek" },
     buttonText: { today: "오늘", month: "월", week: "주", list: "목록" },
     eventSources: [
-      { id: "tasks", events: (info, ok) => ok(tasks.filter(t => (t.due || t.created) && visible(t) && (showAllDone() || isOpen(t))).map(t => ({
-          id: t.id, title: t.title.replace(t.project + " - ", ""), start: t.due || t.created, allDay: true, editable: !!t.due,
-          classNames: ["task", t.due ? "" : "nodue", isLate(t) ? "late" : "", t.status === "완료" ? "done" : "", t.priority === "높음" ? "pri-hi" : t.priority === "낮음" ? "pri-lo" : ""],
-          extendedProps: { kind: "task", project: t.project, color: projColor(t.project), priority: t.priority, priRank: PRIORITIES.indexOf(t.priority) } }))) },
+      { id: "tasks", events: (info, ok) => {
+          const out = [];
+          for (const t of tasks.filter(t => (t.due || t.start || t.created) && visible(t) && (showAllDone() || isOpen(t)))) {
+            const title = t.title.replace(t.project + " - ", ""), color = projColor(t.project);
+            // 최초 작성일이 그 업무의 하루짜리 표시와 같은 날이면 그 카드 안에 🌱만 붙이고, 다른 날이면 따로 표시한다
+            const sameDay = !!t.created && t.created === calStart(t) && !isRange(t);
+            out.push({
+              id: t.id, title, start: calStart(t), end: calEnd(t), allDay: true, editable: !!(t.due || t.start),
+              classNames: ["task", t.due ? "" : "nodue", isLate(t) ? "late" : "", t.status === "완료" ? "done" : "", t.priority === "높음" ? "pri-hi" : t.priority === "낮음" ? "pri-lo" : ""],
+              extendedProps: { kind: "task", project: t.project, color, priority: t.priority, priRank: PRIORITIES.indexOf(t.priority), createdHere: sameDay && showCreated() } });
+            if (t.created && !sameDay && showCreated())
+              out.push({ id: "created:" + t.id, title, start: t.created, allDay: true, editable: false,
+                classNames: ["created", t.status === "완료" ? "done" : ""],
+                extendedProps: { kind: "created", taskId: t.id, project: t.project, color, created: t.created } });
+          }
+          ok(out);
+        } },
       { id: "gcal", events: async (info, ok, fail) => {
           if (!icsCount) { events = []; renderSide(); return ok([]); }
           try {
@@ -1141,21 +1167,44 @@ function initCalendar() {
         } },
     ],
     eventContent: arg => {
+      if (arg.event.extendedProps.kind === "created") return { html: `<div class="ev-task"><span class="cr">🌱</span>${esc(arg.event.title)}</div>` };
       if (arg.event.extendedProps.kind !== "task") return true;
       const pr = arg.event.extendedProps.priority;
       const mark = pr === "높음" ? `<span class="pri-mark hi" title="우선순위 높음">▲</span>` : pr === "낮음" ? `<span class="pri-mark lo" title="우선순위 낮음">▽</span>` : `<span class="box"></span>`;
-      return { html: `<div class="ev-task">${mark}${esc(arg.event.title)}</div>` };
+      const cr = arg.event.extendedProps.createdHere ? `<span class="cr" title="최초 작성일">🌱</span>` : "";
+      return { html: `<div class="ev-task">${mark}${cr}${esc(arg.event.title)}</div>` };
     },
     eventDidMount: arg => {
-      if (arg.event.extendedProps.kind === "task") arg.el.style.setProperty("--pc", arg.event.extendedProps.color);
+      const k = arg.event.extendedProps.kind;
+      if (k === "task" || k === "created") arg.el.style.setProperty("--pc", arg.event.extendedProps.color);
       const loc = arg.event.extendedProps.location;
-      arg.el.title = arg.event.title + (loc ? `\n📍 ${loc}` : "");
+      arg.el.title = k === "created" ? `🌱 최초 작성일 ${arg.event.extendedProps.created.slice(5).replace("-", "/")}\n${arg.event.title}` : arg.event.title + (loc ? `\n📍 ${loc}` : "");
     },
-    eventClick: arg => { if (arg.event.extendedProps.kind === "task") openDrawer(arg.event.id); },
+    eventClick: arg => {
+      const x = arg.event.extendedProps;
+      if (x.kind === "task") openDrawer(arg.event.id);
+      else if (x.kind === "created") openDrawer(x.taskId);
+    },
     eventDrop: async arg => {
       if (arg.event.extendedProps.kind !== "task") return arg.revert();
-      try { await update({ id: arg.event.id, due: isoDate(arg.event.start) }); toast(`마감일을 ${isoDate(arg.event.start).slice(5).replace("-", "/")}로 옮겼어요`); }
-      catch (e) { arg.revert(); toast(e.message); }
+      const t = tasks.find(x => x.id === arg.event.id), s = isoDate(arg.event.start);
+      try {
+        if (isRange(t)) {  // 막대를 통째로 옮기면 시작일·마감일이 같이 움직인다
+          const e = addDays(isoDate(arg.event.end), -1);
+          await update({ id: t.id, start: s, due: e });
+          toast(`${s.slice(5).replace("-", "/")} ~ ${e.slice(5).replace("-", "/")}로 옮겼어요`);
+        } else if (t.start && !t.due) { await update({ id: t.id, start: s }); toast(`시작일을 ${s.slice(5).replace("-", "/")}로 옮겼어요`); }
+        else { await update({ id: t.id, due: s }); toast(`마감일을 ${s.slice(5).replace("-", "/")}로 옮겼어요`); }
+      } catch (e) { arg.revert(); toast(e.message); }
+    },
+    eventResize: async arg => {  // 막대 끝을 끌어 시작일·끝날짜를 바꾼다
+      if (arg.event.extendedProps.kind !== "task") return arg.revert();
+      const t = tasks.find(x => x.id === arg.event.id), s = isoDate(arg.event.start);
+      const e = arg.event.end ? addDays(isoDate(arg.event.end), -1) : s;
+      try {
+        await update({ id: t.id, start: s === e ? "" : s, due: e });
+        toast(s === e ? `${e.slice(5).replace("-", "/")} 하루로 바꿨어요` : `${s.slice(5).replace("-", "/")} ~ ${e.slice(5).replace("-", "/")}`);
+      } catch (err) { arg.revert(); toast(err.message); }
     },
     dateClick: arg => openNew(arg.dateStr),
     dayCellClassNames: arg => holidayClass(arg.date),
@@ -1204,7 +1253,9 @@ function renderDrawer(t) {
         <select id="projSelect" style="width:100%">${[...new Set([...tasks.map(x => x.project), t.project])].sort().map(n =>
           `<option value="${esc(n)}" ${n === t.project ? "selected" : ""}>${esc(n)}</option>`).join("")}<option value="__new__">＋ 새 ${chart ? "테마" : "프로젝트"} 만들기…</option></select></div>
       <div class="field"><label>상태 ${t.status === "대기" ? `<span class="wait-days ${waitDays(t) >= 7 ? "long" : ""}" style="margin-left:6px">⏳ ${waitDays(t)}일째 대기 (${esc(waitSince(t).slice(5).replace("-", "/"))}부터)</span>` : ""}${t.recurring ? `<span class="rec-badge" style="margin-left:6px" title="정기 업무 규칙으로 자동 생성됨">🔁 정기 업무</span>` : ""}</label><div class="seg" id="segStatus">${STATUSES.map(s => `<button data-s="${s}" class="${t.status === s ? "on" : ""}">${s}</button>`).join("")}</div></div>
-      <div class="field ${chart ? "work-only" : ""}"><label>마감일 ${t.due ? `<span class="dday ${ddayLabel(t).cls}" style="margin-left:6px">${ddayLabel(t).text}</span>` : ""}</label>
+      <div class="field ${chart ? "work-only" : ""}"><label>시작일 <span style="color:var(--faint);font-weight:400">(선택)</span></label>
+        <div class="row"><input type="date" id="startInput" value="${esc(t.start || "")}"><button class="quick" id="startClear">지우기</button></div></div>
+      <div class="field ${chart ? "work-only" : ""}"><label>마감일 · 끝날짜 ${t.due ? `<span class="dday ${ddayLabel(t).cls}" style="margin-left:6px">${ddayLabel(t).text}</span>` : ""}</label>
         <div class="row"><input type="date" id="dueInput" value="${esc(t.due || "")}">
           <button class="quick" data-q="0">오늘</button><button class="quick" data-q="1">내일</button><button class="quick" data-q="fri">이번 주 금</button><button class="quick" data-q="mon">다음 주 월</button><button class="quick" data-q="clear">지우기</button></div></div>
       <div class="pri-row"><div class="field"><label>${chart ? "시장" : "우선순위"}</label><div class="seg" id="segPri">${(chart ? ["한국", "미국"] : ["높음", "보통", "낮음"]).map(p => `<button data-p="${p}" class="${t.priority === p ? "on" : ""}">${p}</button>`).join("")}</div></div>
@@ -2176,6 +2227,7 @@ document.addEventListener("click", async e => {
     if (s && s.dataset.s !== t.status) { await update({ id: t.id, status: s.dataset.s }); toast(`'${s.dataset.s}'(으)로 바꿨어요`); }
     const p = e.target.closest("#segPri button");
     if (p && p.dataset.p !== t.priority) await update({ id: t.id, priority: p.dataset.p });
+    if (e.target.id === "startClear") { await update({ id: t.id, start: "" }); toast("시작일을 지웠어요"); }
     if (e.target.id === "chartCheckBtn") { await update({ id: t.id, status: t.status === "완료" ? "할일" : "완료" }); toast(t.status === "완료" ? "분석 체크를 해제했어요" : "차트 분석 완료로 체크했어요"); }
     if (e.target.id === "chartThemesSave") { await update({ id: t.id, themes: $("#chartThemes").value }); toast("테마를 저장했어요"); }
     if (e.target.id === "chartViewSave") { await update({ id: t.id, set_view: $("#chartView").value }); toast("관점 메모를 저장했어요 (옵시디언 노트의 '## 관점')"); }
@@ -2236,11 +2288,21 @@ document.addEventListener("click", async e => {
   } catch (err) { toast(err.message); }
 });
 document.addEventListener("change", async e => {
+  if (e.target.id === "createdToggle") {
+    try { localStorage.setItem("wb.created", e.target.checked ? "1" : "0"); } catch (x) {}
+    if (calendar) calendar.getEventSourceById("tasks").refetch();
+    return;
+  }
   if (e.target.id === "noteSection") { lastNoteSection = e.target.value; return; }
   if (e.target.id === "doneToggle") { showDone = e.target.checked; try { localStorage.setItem("wb.done", showDone ? "1" : "0"); } catch (x) {} return renderAll(); }
   if (!current) return;
   try {
-    if (e.target.id === "dueInput") await update({ id: current, due: e.target.value });
+    if (e.target.id === "dueInput" || e.target.id === "startInput") {
+      const t = tasks.find(x => x.id === current), v = e.target.value, isStart = e.target.id === "startInput";
+      const s = isStart ? v : t.start, d = isStart ? t.due : v;
+      if (s && d && s > d) { toast("시작일이 마감일보다 늦어요"); return renderDrawer(t); }
+      await update({ id: current, [isStart ? "start" : "due"]: v });
+    }
     if (e.target.id === "projSelect") {
       const t = tasks.find(x => x.id === current);
       let name = e.target.value;
@@ -2336,7 +2398,8 @@ $("#newForm").onsubmit = async e => {
   const f = e.target;
   try {
     const chart = mode === "chart";
-    const j = await api("/api/task/create", { title: f.title.value, project: f.project.value, due: f.due.value, priority: f.priority.value, checks: f.checks.value,
+    if (!chart && f.start.value && f.due.value && f.start.value > f.due.value) throw new Error("시작일이 마감일보다 늦어요");
+    const j = await api("/api/task/create", { title: f.title.value, project: f.project.value, due: f.due.value, ...(chart ? {} : { start: f.start.value }), priority: f.priority.value, checks: f.checks.value,
       ...(chart ? { board: "차트", symbol: f.symbol.value } : {}) });
     await loadTasks(); $("#newModal").classList.remove("on"); toast(chart ? "종목을 만들었어요 (Obsidian에도 저장됨)" : "업무를 만들었어요 (Obsidian에도 저장됨)");
   } catch (err) { toast(err.message); }
@@ -2589,7 +2652,7 @@ async function dbqGet(qs) {
       if (!r.enabled) { out.innerHTML = "<p>⚠ DB 검색 서버에 연결할 수 없어요. DB검색API.bat 을 켜 주세요.</p>"; return; }
       if (r.error) { out.innerHTML = `<p>⚠ ${esc(r.error)}</p>`; return; }
       const gl = (r.glossary || []).map(g => `<p>📖 ${esc(g)}</p>`).join("");
-      const items = (r.results || []).map((x, i) => `<details ${x.content && i < 2 ? "open" : ""}><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점 ${x.desc ? "· " + esc(x.desc) : ""}</span></summary>`
+      const items = (r.results || []).map((x, i) => `<details><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점 ${x.desc ? "· " + esc(x.desc) : ""}</span></summary>`
         + (x.content ? `<pre>${esc(x.content)}</pre>` : `<p class="sub">${esc(x.file)}</p>`) + `</details>`).join("");
       out.innerHTML = gl + (items || "<p>관련 객체를 찾지 못했어요. 다른 표현으로 다시 검색해 보세요.</p>")
         + `<p class="sub">※ 관련 객체를 찾아 보여주는 기능이에요. 문장으로 된 설명이 필요하면 Claude Code에서 같은 질문을 하세요.</p>`;

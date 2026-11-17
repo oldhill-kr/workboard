@@ -163,7 +163,7 @@
       id: name, title, project: fm.project || "기타", status: fm.status || "할일",
       priority: fm.priority || (fm.board === "차트" ? "한국" : "보통"), board: fm.board || "업무", symbol: String(fm.symbol || ""),
       themes: (() => { const p = fm.project || "기타", th = (Array.isArray(fm.themes) ? fm.themes : []).map(String).filter(Boolean); return th[0] === p ? th : [p, ...th.filter(x => x !== p)]; })(),
-      due: fm.due || null, created: fm.created || null, completed: fm.completed || null,
+      due: fm.due || null, start: fm.start || null, created: fm.created || null, completed: fm.completed || null,
       archived: String(fm.archived || "").toLowerCase() === "true", recurring: fm.recurring || "",
       people: Array.isArray(people) ? people : [people], checks, body, mtime, obsidian,
     };
@@ -264,6 +264,11 @@
       if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) fail("마감일 형식은 YYYY-MM-DD");
       text = setFrontmatter(text, "due", due);
     }
+    if ("start" in data) {
+      const start = data.start || "";
+      if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) fail("시작일 형식은 YYYY-MM-DD");
+      text = start ? setFrontmatter(text, "start", start) : removeFrontmatter(text, "start");
+    }
     if ("priority" in data) text = setFrontmatter(text, "priority", data.priority);
     if ("set_view" in data) text = setSectionBullets(text, "관점", [String(data.set_view || "").trim()].filter(Boolean));  // 차트보드 관점 메모
     if ("toggle_check" in data) {
@@ -333,7 +338,7 @@ project: ${project}
 status: ${data.status || "할일"}
 priority: ${data.priority || (chart ? "한국" : "보통")}
 due: ${data.due || ""}
-created: ${today}
+${data.start && /^\d{4}-\d{2}-\d{2}$/.test(data.start) && (!data.due || data.start <= data.due) ? `start: ${data.start}\n` : ""}created: ${today}
 ${chart ? "board: 차트\n" + (themes.length > 1 ? `themes: [${themes.join(", ")}]\n` : "") : ""}${chart && data.symbol ? `symbol: ${String(data.symbol).replace(/[^0-9A-Za-z.\-]/g, "")}\n` : ""}people: []
 ${rec ? `recurring: ${rec}\n` : ""}tags: ${chart ? "[work, 차트]" : "[work, 업무]"}
 ---

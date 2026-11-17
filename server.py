@@ -197,6 +197,7 @@ def task_from_file(path):
         "symbol": str(fm.get("symbol") or ""),
         "themes": _themes_of(fm),
         "due": _date_or_none(fm.get("due")),
+        "start": _date_or_none(fm.get("start")),  # 시작일(선택): 있으면 달력에 시작일~마감일을 한 줄 막대로 그린다
         "created": _date_or_none(fm.get("created")),
         "completed": _date_or_none(fm.get("completed")),
         "archived": str(fm.get("archived", "")).lower() == "true",
@@ -501,6 +502,11 @@ def update_task(data):
             if due and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due):
                 raise ValueError("마감일 형식은 YYYY-MM-DD")
             text = set_frontmatter(text, "due", due)
+        if "start" in data:
+            start = data["start"] or ""
+            if start and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start):
+                raise ValueError("시작일 형식은 YYYY-MM-DD")
+            text = set_frontmatter(text, "start", start) if start else remove_frontmatter(text, "start")
         if "priority" in data:
             text = set_frontmatter(text, "priority", _fm_text(data["priority"], "중요도", 20))
         if "set_view" in data:  # 차트보드: '## 관점' 메모를 통째로 바꾼다
@@ -733,6 +739,11 @@ def create_task(data):
     due = (data.get("due") or "").strip()
     if due and not _DATE_RE.fullmatch(due):
         raise ValueError("마감일 형식은 YYYY-MM-DD")
+    start = (data.get("start") or "").strip()
+    if start and not _DATE_RE.fullmatch(start):
+        raise ValueError("시작일 형식은 YYYY-MM-DD")
+    if start and due and start > due:
+        raise ValueError("시작일이 마감일보다 늦어요")
     if not chart and project in archived_projects():  # 보관된 프로젝트에 업무를 추가하면 다시 꺼낸다
         set_archived(project, False)
     name = re.sub(r'[\\/:*?"<>|#^\[\]]', " ", f"{project} - {title}").strip()
@@ -748,6 +759,7 @@ def create_task(data):
     if rec and not re.fullmatch(r"[0-9A-Za-z_\-]{1,40}", rec):
         raise ValueError("정기 업무 id가 올바르지 않아요")
     rec_line = f"recurring: {rec}\n" if rec else ""
+    start_line = f"start: {start}\n" if start else ""
     board_line = f"board: {CHART_BOARD}\n" + (f"themes: [{', '.join(themes)}]\n" if len(themes) > 1 else "") if chart else ""
     symbol = re.sub(r"[^0-9A-Za-z.\-]", "", str(data.get("symbol") or ""))
     symbol_line = f"symbol: {symbol}\n" if symbol else ""
@@ -759,7 +771,7 @@ project: {project}
 status: {status}
 priority: {priority}
 due: {due}
-created: {today}
+{start_line}created: {today}
 {board_line}{symbol_line}people: []
 {rec_line}tags: {tags}
 ---
