@@ -2548,10 +2548,20 @@ function afterBoot() {
 })();
 
 // ---------- DB 질의 (config.json에 dbq_root 설정 시에만 탭이 보임) ----------
-let dbqProjects = {};
+let dbqProjects = {}, dbqBase = null;
+// 같은 서버(로컬 업무보드)에 /api/dbq 가 있으면 그것을, 없으면(GitHub Pages 등) 이 PC의 DB검색API(8766)를 쓴다.
+async function dbqGet(qs) {
+  for (const b of dbqBase !== null ? [dbqBase] : ["", "http://127.0.0.1:8766"]) {
+    try {
+      const r = await (await fetch(b + "/api/dbq" + qs)).json();
+      if (r && r.enabled) { dbqBase = b; return r; }
+    } catch (e) {}
+  }
+  return { enabled: false };
+}
 (async () => {
   try {
-    const r = await (await fetch("/api/dbq")).json();
+    const r = await dbqGet("");
     if (!r.enabled) return;
     dbqProjects = r.projects || {};
     $("#dbqTab").hidden = false;
@@ -2575,7 +2585,8 @@ let dbqProjects = {};
     if (!q) return;
     out.innerHTML = "<p>찾는 중…</p>";
     try {
-      const r = await (await fetch("/api/dbq?top=10&show=3&project=" + encodeURIComponent(pSel.value) + "&db=" + encodeURIComponent(dSel.value) + "&q=" + encodeURIComponent(q))).json();
+      const r = await dbqGet("?top=10&show=3&project=" + encodeURIComponent(pSel.value) + "&db=" + encodeURIComponent(dSel.value) + "&q=" + encodeURIComponent(q));
+      if (!r.enabled) { out.innerHTML = "<p>⚠ DB 검색 서버에 연결할 수 없어요. DB검색API.bat 을 켜 주세요.</p>"; return; }
       if (r.error) { out.innerHTML = `<p>⚠ ${esc(r.error)}</p>`; return; }
       const gl = (r.glossary || []).map(g => `<p>📖 ${esc(g)}</p>`).join("");
       const items = (r.results || []).map(x => `<details ${x.content ? "open" : ""}><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점 ${x.desc ? "· " + esc(x.desc) : ""}</span></summary>`
