@@ -783,7 +783,7 @@ function addDays(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.ge
 function diffDays(a, b) { return Math.round((new Date(a + "T00:00:00") - new Date(b + "T00:00:00")) / 86400000); }
 let projectColors = {};
 function projColor(p) {
-  if (projectColors[p]) return projectColors[p];  // 서버가 고정해 둔 색
+  if (/^#[0-9a-fA-F]{6}$/.test(projectColors[p] || "")) return projectColors[p];  // 서버가 고정해 둔 색(형식 검증)
   const names = [...new Set(tasks.map(t => t.project))].sort();
   const i = names.indexOf(p); return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
 }
@@ -801,7 +801,7 @@ function bucket(t) {
 function ddayLabel(t) {
   if (!t.due) return { text: "마감 미정", cls: "" };
   const n = diffDays(t.due, today);
-  if (t.status === "완료") return { text: t.due.slice(5).replace("-", "/"), cls: "" };
+  if (t.status === "완료") return { text: esc(t.due.slice(5).replace("-", "/")), cls: "" };
   if (n === 0) return { text: "오늘 마감", cls: "soon" };
   if (n < 0) return { text: `D+${-n}`, cls: "late" };
   return { text: `D-${n}`, cls: n <= 2 ? "soon" : "" };
@@ -907,7 +907,7 @@ function chartCardHTML(t) {
     <div class="top"><span class="proj">${esc(themesOf(t).join(" · "))}</span><span class="mk ${esc(t.priority)}">${esc(t.priority)}</span></div>
     <div class="title">${esc(shortTitle(t))}${t.symbol ? `<span class="sym">${esc(t.symbol)}</span>` : ""}</div>
     <div class="meta"><button class="ccheck ${done ? "on" : ""}" data-chart-check="${esc(t.id)}" title="${done ? "차트 분석 완료 (누르면 해제)" : "차트 분석을 마쳤으면 체크"}">${done ? "✔" : ""}</button>
-      <span style="color:var(--sub);font-size:12px">${done ? "분석 완료" + (t.completed ? " · " + t.completed.slice(5).replace("-", "/") : "") : "차트 확인 전"}</span></div>
+      <span style="color:var(--sub);font-size:12px">${done ? "분석 완료" + (t.completed ? " · " + esc(t.completed.slice(5).replace("-", "/")) : "") : "차트 확인 전"}</span></div>
     <div class="cview ${memo ? "" : "none"}">${memo ? esc(memo) : "관점 메모 없음"}</div>
   </div>`;
 }
@@ -919,7 +919,7 @@ function cardHTML(t) {
     <div class="top"><span class="proj">${esc(t.project)}</span>${t.recurring ? `<span class="rec-badge" title="정기 업무">🔁</span>` : ""}${t.status !== "할일" ? `<span class="pill ${esc(t.status)}">${esc(t.status)}</span>` : ""}
       ${t.checks.some(c => !c.done && isUrgText(c.text)) && isOpen(t) ? `<span class="urg-badge" title="긴급 할 일이 있어요">🔥</span>` : ""}${t.priority === "높음" ? `<span class="pri">높음</span>` : ""}</div>
     <div class="title">${esc(t.title.replace(t.project + " - ", ""))}</div>
-    <div class="meta"><span class="dday ${dd.cls}">${dd.text}</span>${t.due && dd.text.startsWith("D") ? `<span>${t.due.slice(5).replace("-", "/")}</span>` : ""}${waitHTML(t)}
+    <div class="meta"><span class="dday ${dd.cls}">${dd.text}</span>${t.due && dd.text.startsWith("D") ? `<span>${esc(t.due.slice(5).replace("-", "/"))}</span>` : ""}${waitHTML(t)}
       ${total ? `<span class="prog"><span class="bar"><i style="width:${Math.round(done / total * 100)}%"></i></span>${done}/${total}</span>` : ""}</div>
   </div>`;
 }
@@ -1048,7 +1048,7 @@ function renderProjectSummary() {
     <div class="steps">${steps.map(t => { const dd = ddayLabel(t), c = t.checks.filter(x => x.done).length;
       return `<div class="step s-${esc(t.status)}" data-id="${esc(t.id)}" onclick="openDrawer(this.dataset.id)">
         <div class="t">${esc(t.title.replace(t.project + " - ", ""))}</div>
-        <div class="m"><span>${esc(t.status)}</span><span>${dd.text}${t.due ? " · " + t.due.slice(5).replace("-", "/") : ""}</span>${t.checks.length ? `<span>${c}/${t.checks.length}</span>` : ""}</div></div>`; }).join("")}</div>
+        <div class="m"><span>${esc(t.status)}</span><span>${dd.text}${t.due ? " · " + esc(t.due.slice(5).replace("-", "/")) : ""}</span>${t.checks.length ? `<span>${c}/${t.checks.length}</span>` : ""}</div></div>`; }).join("")}</div>
   </div>`;
 }
 const CHART_COLS = [
@@ -1535,7 +1535,7 @@ function renderGrowth() {
   const todoRows = openMine.map(t => `<div class="g-todo" data-id="${esc(t.id)}"><span class="pill ${esc(t.status)}">${esc(t.status)}</span>
       <span class="tt">${esc(t.title.replace(t.project + " - ", ""))}</span>
       ${t.checks.length ? `<span class="d">${t.checks.filter(x => x.done).length}/${t.checks.length}</span>` : ""}
-      <span class="d">${t.due ? t.due.slice(5).replace("-", "/") : ""}</span></div>`).join("");
+      <span class="d">${t.due ? esc(t.due.slice(5).replace("-", "/")) : ""}</span></div>`).join("");
   const todoCard = `<section class="g-card"><h3>🌿 개인 To-Do <span class="sub">${personal.map(esc).join(", ")}</span>
       <button class="btn" id="personalSetBtn" style="margin-left:auto" title="어떤 프로젝트를 개인 영역으로 쓸지 지정">프로젝트 지정</button></h3>
       ${personal.length ? `<div class="g-add"><input type="text" id="gTodoInput" placeholder="＋ 할 일을 적고 Enter (${esc(personal[0])})"></div>` : ""}

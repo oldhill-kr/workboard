@@ -95,6 +95,30 @@ def _themes_of(fm):
     return th if th and th[0] == proj else [proj] + [x for x in th if x != proj]
 
 
+_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def _date_or_none(v):
+    """머리말 날짜는 YYYY-MM-DD 형식만 통과시킨다. 그 밖의 값(HTML 조각 등)은 버린다."""
+    s = str(v or "").strip()
+    return s if _DATE_RE.fullmatch(s) else None
+
+
+def _fm_text(v, field, maxlen=60):
+    """머리말에 쓰는 한 줄 값 검증: 줄바꿈·HTML 문자·긴 문자열은 거부."""
+    s = str(v or "").strip()
+    if len(s) > maxlen or re.search(r'[\r\n<>"`]', s):
+        raise ValueError(f"{field} 값이 올바르지 않아요")
+    return s
+
+
+def _fm_text_safe(v, default, maxlen=60):
+    """읽을 때 쓰는 느슨한 버전: 이상한 값이면 기본값으로 대체."""
+    s = str(v or "").strip()
+    return default if (not s or len(s) > maxlen or re.search(r'[\r\n<>"`]', s)) else s
+
+
 def task_from_file(path):
     fm, body, _ = read_note(path)
     if fm.get("type") != "업무":
@@ -116,16 +140,16 @@ def task_from_file(path):
         "id": path.name,
         "title": title,
         "project": fm.get("project") or "기타",
-        "status": fm.get("status") or "할일",
-        "priority": fm.get("priority") or ("한국" if fm.get("board") == CHART_BOARD else "보통"),
+        "status": fm.get("status") if fm.get("status") in STATUSES else "할일",
+        "priority": _fm_text_safe(fm.get("priority"), "한국" if fm.get("board") == CHART_BOARD else "보통"),
         "board": fm.get("board") or "업무",
         "symbol": str(fm.get("symbol") or ""),
         "themes": _themes_of(fm),
-        "due": fm.get("due") or None,
-        "created": fm.get("created") or None,
-        "completed": fm.get("completed") or None,
+        "due": _date_or_none(fm.get("due")),
+        "created": _date_or_none(fm.get("created")),
+        "completed": _date_or_none(fm.get("completed")),
         "archived": str(fm.get("archived", "")).lower() == "true",
-        "recurring": fm.get("recurring") or "",
+        "recurring": _fm_text_safe(fm.get("recurring"), ""),
         "people": people if isinstance(people, list) else [people],
         "checks": checks,
         "body": body,
@@ -427,7 +451,7 @@ def update_task(data):
                 raise ValueError("마감일 형식은 YYYY-MM-DD")
             text = set_frontmatter(text, "due", due)
         if "priority" in data:
-            text = set_frontmatter(text, "priority", data["priority"])
+            text = set_frontmatter(text, "priority", _fm_text(data["priority"], "중요도", 20))
         if "set_view" in data:  # 차트보드: '## 관점' 메모를 통째로 바꾼다
             memo = str(data.get("set_view") or "").strip()
             text = _set_section_bullets(text, VIEW_SECTION, [memo] if memo else [])
@@ -650,6 +674,14 @@ def create_task(data):
     project = (themes[0] if themes else None) or ("미분류" if chart else (data.get("project") or "기타").strip())
     if chart and not data.get("priority"):
         data = dict(data, priority="한국")
+    project = _fm_text(project, "프로젝트", 80)
+    status = data.get("status") or "할일"
+    if status not in STATUSES:
+        raise ValueError("잘못된 상태")
+    priority = _fm_text(data.get("priority") or "보통", "중요도", 20)
+    due = (data.get("due") or "").strip()
+    if due and not _DATE_RE.fullmatch(due):
+        raise ValueError("마감일 형식은 YYYY-MM-DD")
     if not chart and project in archived_projects():  # 보관된 프로젝트에 업무를 추가하면 다시 꺼낸다
         set_archived(project, False)
     name = re.sub(r'[\\/:*?"<>|#^\[\]]', " ", f"{project} - {title}").strip()
@@ -662,6 +694,8 @@ def create_task(data):
     checks = [c.strip() for c in (data.get("checks") or "").splitlines() if c.strip()]
     check_lines = "\n".join(f"- [ ] {c}" for c in checks) or ("" if chart else "- [ ] ")
     rec = (data.get("recurring") or "").strip()  # 정기 업무 규칙이 만든 노트는 규칙 id를 머리말에 남긴다
+    if rec and not re.fullmatch(r"[0-9A-Za-z_\-]{1,40}", rec):
+        raise ValueError("정기 업무 id가 올바르지 않아요")
     rec_line = f"recurring: {rec}\n" if rec else ""
     board_line = f"board: {CHART_BOARD}\n" + (f"themes: [{', '.join(themes)}]\n" if len(themes) > 1 else "") if chart else ""
     symbol = re.sub(r"[^0-9A-Za-z.\-]", "", str(data.get("symbol") or ""))
@@ -671,9 +705,9 @@ def create_task(data):
         f"""---
 type: 업무
 project: {project}
-status: {data.get('status') or '할일'}
-priority: {data.get('priority') or '보통'}
-due: {data.get('due') or ''}
+status: {status}
+priority: {priority}
+due: {due}
 created: {today}
 {board_line}{symbol_line}people: []
 {rec_line}tags: {tags}
@@ -1754,12 +1788,29 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    MAX_BODY = 1_000_000  # 요청 본문 상한(1MB)
+
     def read_json(self):
         n = int(self.headers.get("Content-Length") or 0)
+        if n < 0 or n > self.MAX_BODY:
+            raise ValueError("요청이 너무 커요")
         return json.loads(self.rfile.read(n) or b"{}")
+
+    def _own_origins(self):
+        port = self.server.server_address[1]
+        return (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+
+    def _host_ok(self):
+        """DNS 리바인딩 방어: Host 헤더가 이 서버의 로컬 주소일 때만 응답한다."""
+        return (self.headers.get("Host") or "") in tuple(o[len("http://"):] for o in self._own_origins())
+
+    def _reject(self, code, msg):
+        self.send_json({"error": msg}, code)
 
     def do_GET(self):
         u = urlparse(self.path)
+        if not self._host_ok():
+            return self._reject(403, "허용되지 않은 주소")
         try:
             if u.path in ("/", "/index.html"):
                 body = (ROOT / "index.html").read_bytes()
@@ -1811,11 +1862,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json({"error": "없는 주소"}, 404)
         except Exception as e:
-            self.send_json({"error": str(e)}, 500)
+            print("GET 오류:", u.path, repr(e))
+            self.send_json({"error": "서버 오류"}, 500)
 
     def do_OPTIONS(self):  # 브라우저의 사전 확인(preflight): 차트 체크 API + 허용된 출처만
         u = urlparse(self.path)
-        origin = self._cors_origin()
+        origin = self._cors_origin() if self._host_ok() else ""
         if not (u.path.startswith("/api/chart/") and origin):
             self.send_response(403)
             self.send_header("Content-Length", "0")
@@ -1832,10 +1884,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urlparse(self.path)
+        if not self._host_ok():
+            return self._reject(403, "허용되지 않은 주소")
         try:
-            if u.path.startswith("/api/chart/") and self.headers.get("Origin") and not self._cors_origin():
-                self.send_json({"error": "허용되지 않은 출처"}, 403)
-                return
+            origin = self.headers.get("Origin")
+            if u.path.startswith("/api/chart/"):
+                if origin and not self._cors_origin():
+                    return self._reject(403, "허용되지 않은 출처")
+            else:
+                # 차트 API 말고는 이 보드 화면(같은 출처)에서 온 JSON 요청만 받는다 (CSRF 방어)
+                if origin and origin not in self._own_origins():
+                    return self._reject(403, "허용되지 않은 출처")
+                if self.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site"):
+                    return self._reject(403, "허용되지 않은 출처")
+                if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
+                    return self._reject(415, "JSON 요청만 받아요")
             data = self.read_json()
             if u.path == "/api/chart/scout":
                 self.send_json({"ok": True, "task": upsert_chart_scout(data)})
@@ -1880,6 +1943,8 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/config/ics":
                 cfg = load_config()
                 urls = [s.strip() for s in data.get("ics_urls", []) if s.strip()]
+                if any(not re.match(r"(https://|webcal://)", s, re.I) for s in urls):
+                    raise ValueError("캘린더 주소는 https:// 로 시작해야 해요")
                 cfg["ics_urls"] = urls
                 save_config(cfg)
                 _ics_cache.clear()
@@ -1916,7 +1981,8 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             self.send_json({"error": str(e)}, 400)
         except Exception as e:
-            self.send_json({"error": str(e)}, 500)
+            print("POST 오류:", u.path, repr(e))
+            self.send_json({"error": "서버 오류"}, 500)
 
 
 def main():
