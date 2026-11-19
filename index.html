@@ -322,6 +322,14 @@ main { padding: 14px 24px 24px; }
 .fc-event.created { background: transparent; border: 1px dotted var(--line); border-left: 3px dotted var(--pc); color: var(--sub); cursor: pointer; }
 .fc-event.created .fc-event-main { color: var(--sub); }
 .fc-event.created.done { opacity: .55; }
+/* 시작·마감 막대: 배경 전체를 프로젝트 색으로 칠한다 */
+.fc-event.task, .fc-event.created, .fc-event.task.nodue, .fc-event.task.pri-lo { background: color-mix(in srgb, var(--pc) 78%, #000); border: 1px solid var(--pc); border-left: 3px solid var(--pc); color: #fff; }
+.fc-event.task .fc-event-main, .fc-event.created .fc-event-main, .fc-event.task .ev-task, .fc-event.task.pri-lo .ev-task { color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+.fc-event.task.pri-hi { border-left-width: 5px; }
+.fc-event.task.nodue { border-style: dashed; border-left-style: solid; }
+.fc-event.created { border-style: dotted; border-left-style: solid; }
+.fc-event.task.late { background: color-mix(in srgb, var(--red) 80%, #000); border-color: var(--red); border-left-color: var(--pc); }
+.fc-event.task .pri-mark.hi, .fc-event.task .pri-mark.lo { color: #fff; }
 .ev-task .cr { flex: none; font-size: 11px; line-height: 1; }
 .ev-task { display: flex; gap: 5px; align-items: center; padding: 1px 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .ev-task .box { width: 10px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; flex: none; opacity: .7; }
@@ -2598,10 +2606,18 @@ function afterBoot() {
         $("#confirmMsg").textContent = "";
         try {
           await useBackend(last, folder ? { handle: folder } : {});
+        } catch (e) {
+          // 저장 위치에 연결하지 못했으면 팝업을 붙잡아 두지 않고 저장 위치 선택 화면으로 보낸다
+          $("#confirmMsg").textContent = "";
           $("#confirmModal").classList.remove("on");
-          window.__booted = true; afterBoot();
-          done(true);
-        } catch (e) { if (e.name !== "AbortError") $("#confirmMsg").textContent = e.message; }
+          window.__confirmBack = true;
+          openStorageModal(e.name === "AbortError" ? "저장 위치를 다시 선택해 주세요" : "저장 위치에 연결하지 못했어요: " + (e.message || e.name));
+          return;
+        }
+        $("#confirmModal").classList.remove("on");
+        window.__booted = true;
+        try { afterBoot(); } catch (e) { console.error(e); }
+        done(true);
       };
     });
     return;
@@ -2652,7 +2668,7 @@ async function dbqGet(qs) {
       if (!r.enabled) { out.innerHTML = "<p>⚠ DB 검색 서버에 연결할 수 없어요. DB검색API.bat 을 켜 주세요.</p>"; return; }
       if (r.error) { out.innerHTML = `<p>⚠ ${esc(r.error)}</p>`; return; }
       const gl = (r.glossary || []).map(g => `<p>📖 ${esc(g)}</p>`).join("");
-      const items = (r.results || []).map((x, i) => `<details><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점 ${x.desc ? "· " + esc(x.desc) : ""}</span></summary>`
+      const items = (r.results || []).map((x, i) => `<details><summary>${esc(x.key)} <span class="sub">${esc(x.db)} · ${esc(x.kind)} · ${x.score}점${x.rows != null ? " · 행 " + Number(x.rows).toLocaleString() : ""}${x.why && x.why.length ? " · 근거: " + esc(x.why.join(", ")) : ""}${x.desc ? " · " + esc(x.desc) : ""}</span></summary>`
         + (x.content ? `<pre>${esc(x.content)}</pre>` : `<p class="sub">${esc(x.file)}</p>`) + `</details>`).join("");
       out.innerHTML = gl + (items || "<p>관련 객체를 찾지 못했어요. 다른 표현으로 다시 검색해 보세요.</p>")
         + `<p class="sub">※ 관련 객체를 찾아 보여주는 기능이에요. 문장으로 된 설명이 필요하면 Claude Code에서 같은 질문을 하세요.</p>`;
